@@ -76,7 +76,7 @@ For example:
     Whisper transcription: bits
     Alias: bag it -> bitch
 
-With that alias configured, a transcription of `bag it` can be handled as the corresponding blocked word.
+With that alias configured, a transcription of `bits` can be handled as the corresponding blocked word.
 
 Aliases are useful when pronunciation, background noise, microphone quality, or Whisper's speech recognition causes a blocked word to be transcribed differently from how it was actually spoken.
 
