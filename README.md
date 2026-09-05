@@ -68,4 +68,8 @@ as its microphone source.
 
 ## License
 
-No license has been selected for this repository yet.
+VoiceGuard is licensed under the **MIT License**.
+
+See the [LICENSE](LICENSE) file for the complete license text.
+
+Copyright (c) 2026 superchilpil.
