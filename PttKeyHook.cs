@@ -44,8 +44,10 @@ public sealed class PttKeyHook : IDisposable
             var k = (Keys)Marshal.ReadInt32(lParam);
             if (k == key)
             {
-                bool down = wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN;
-                bool up = wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP;
+                bool down = wParam == (IntPtr)WM_KEYDOWN ||
+                            wParam == (IntPtr)WM_SYSKEYDOWN;
+                bool up = wParam == (IntPtr)WM_KEYUP ||
+                          wParam == (IntPtr)WM_SYSKEYUP;
 
                 if (down && !isDown)
                 {
@@ -75,11 +77,16 @@ public sealed class PttKeyHook : IDisposable
     private delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+    private static extern IntPtr SetWindowsHookEx(
+        int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+    private static extern IntPtr CallNextHookEx(
+        IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
 }

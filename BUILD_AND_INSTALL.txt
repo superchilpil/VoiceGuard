@@ -1,7 +1,0 @@
-VoiceGuard 6.5.5
-
-Build source with BUILD.bat on Windows (.NET 8 SDK required).
-Then compile VoiceGuard_Installer.iss with Inno Setup 6.
-Installer output: installer\VoiceGuard_Setup_6.5.5.exe
-
-Persistent configuration remains in %LOCALAPPDATA%\VoiceGuard\config.json.

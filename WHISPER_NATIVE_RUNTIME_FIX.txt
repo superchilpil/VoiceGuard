@@ -1,8 +1,0 @@
-VoiceGuard 6.5.5 — Whisper native runtime fix
-
-The previous single-file publish did not leave Whisper.net's native library available to its native loader on the installed machine.
-
-This build intentionally uses a self-contained multi-file publish. Whisper.net.Runtime's native whisper.dll is installed beside VoiceGuard.exe and the installer includes the entire publish directory.
-
-Model storage remains %LOCALAPPDATA%\VoiceGuard\Models.
-The approved icon and working taskbar/AppUserModelID fix are retained.

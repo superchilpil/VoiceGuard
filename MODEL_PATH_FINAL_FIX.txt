@@ -1,7 +1,0 @@
-VoiceGuard 6.5.5 — Final model path fix
-
-DownloadModelAsync, LoadModelAsync, and the GUI log now all use the same writable path:
-%LOCALAPPDATA%\VoiceGuard\Models
-
-No model access is attempted under Program Files.
-The approved icon design and working taskbar/AppUserModelID fix are retained.

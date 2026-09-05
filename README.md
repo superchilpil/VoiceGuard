@@ -1,50 +1,70 @@
 # VoiceGuard
 
-VoiceGuard is a Windows voice-chat profanity filter built with C#/.NET 8 WinForms. It captures microphone audio, delays playback, uses local Whisper transcription to detect configured blocked words/phrases, and censors offending audio before it reaches the selected output device.
-
-## Current version
-
-6.5.5
-
-## Highlights
-
-- Local Whisper speech detection
-- Configurable blocked words and phrases
-- Transcription aliases
-- Per-word replacement WAV effects
-- Multiple repeated profanity occurrences handled independently
-- Hard audio censoring with pre/post-roll
-- Configurable audio delay
-- Push-to-talk support
-- Persistent settings stored under `%LOCALAPPDATA%\\VoiceGuard`
-- CPU-only Whisper runtime for a smaller Windows deployment
-- Dark WinForms interface with VoiceGuard branding
+VoiceGuard is a Windows voice-chat profanity filter that captures microphone
+audio, delays it for filtering, detects configured blocked words/phrases with
+local Whisper speech recognition, and mutes or replaces offending audio before
+sending it to the selected output device.
 
 ## Requirements
 
-- Windows 10/11 x64
-- .NET 8 SDK for building from source
-- **VB-Audio Virtual Cable (VB-CABLE) is required for audio routing**
+- Windows 10/11, 64-bit
+- .NET 8 SDK
+- A microphone/input device
+- **VB-Audio Virtual Cable (VB-CABLE)**
 
-### VB-Audio Virtual Cable
+VoiceGuard is designed to route its filtered audio through VB-CABLE.
 
-VoiceGuard uses VB-Audio Virtual Cable to route the processed audio to applications such as Discord and other voice-chat software. Install the standard **VB-CABLE** package before using VoiceGuard.
+Download VB-CABLE from the official VB-Audio page:
+https://vb-audio.com/Cable/
 
-**Official download:** https://vb-audio.com/Cable/
+## Features
 
-After installation, Windows should provide the `CABLE Input` playback device and `CABLE Output` recording device. VoiceGuard can then use the appropriate VB-CABLE device for its output/input routing.
+- Local Whisper speech recognition
+- Configurable blocked words and phrases
+- Transcription aliases
+- Per-word replacement sound effects
+- Adjustable delayed filtering
+- Push-to-talk support
+- Input/output device selection
+- Persistent settings stored in the user's local application data
+- Windows taskbar/application icon
+- CPU-only Whisper runtime for a smaller deployment
 
-## Build
+## Building
 
-Run `BUILD.bat` for a normal build or `BUILD_INSTALLER.bat` to publish the self-contained Windows build and create the installer with Inno Setup.
+Open a Developer Command Prompt or PowerShell in the repository directory.
 
-The published application intentionally preserves the Whisper native runtime directory under `runtimes\\win-x64` rather than using single-file publishing. This is required for reliable Whisper native-library loading.
+Build:
 
-## Model storage
+    BUILD.bat
 
-Whisper models are stored in:
+For a self-contained Windows x64 publish and installer build:
 
-`%LOCALAPPDATA%\\VoiceGuard\\Models`
+    BUILD_INSTALLER.bat
+
+The published application intentionally keeps Whisper's native runtime files
+in the `runtimes\win-x64` directory. Do not convert the application to a
+single-file publish, because Whisper's native runtime layout is required.
+
+## Models
+
+Whisper models are stored under:
+
+    %LOCALAPPDATA%\VoiceGuard\Models
+
+The application downloads/loads its configured local Whisper model there.
+
+## Audio routing
+
+A typical setup is:
+
+    Microphone
+        -> VoiceGuard
+        -> VB-CABLE
+        -> Voice chat application
+
+Configure the voice-chat application to use the VB-CABLE recording/input side
+as its microphone source.
 
 ## License
 

@@ -1,0 +1,10 @@
+bin/
+obj/
+publish/
+installer/
+Models/
+*.user
+*.suo
+.vs/
+.vscode/
+config.json
