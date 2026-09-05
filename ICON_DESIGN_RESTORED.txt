@@ -1,0 +1,5 @@
+VoiceGuard 6.5.5
+
+Restored the VoiceGuard.ico artwork from the approved VoiceGuard Shield Transparent HQ v2 design supplied by the user.
+The working taskbar/AppUserModelID fix from the previous package is retained.
+No GUI, audio, persistence, or censorship logic was changed.
