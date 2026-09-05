@@ -25,7 +25,6 @@ VoiceGuard is a Windows voice-chat profanity filter built with C#/.NET 8 WinForm
 - Windows 10/11 x64
 - .NET 8 SDK for building from source
 - **VB-Audio Virtual Cable (VB-CABLE) is required for audio routing**
-- FFmpeg is not required by the VoiceGuard audio engine
 
 ### VB-Audio Virtual Cable
 
