@@ -1,0 +1,42 @@
+VoiceGuard 6.5.5 — One-Click Installer Build
+
+IMPORTANT SIZE FIX
+The previous project referenced Whisper.net.AllRuntimes, which bundles multiple
+Whisper native runtimes, including GPU/platform variants that VoiceGuard does not
+need for this Windows x64 CPU build. That caused the single-file publish to become
+enormous and made Inno Setup appear to hang while compressing it.
+
+This version uses:
+- Whisper.net 1.9.1
+- Whisper.net.Runtime 1.9.1 (CPU runtime only)
+- NAudio 2.2.1
+
+BUILD
+Run BUILD_INSTALLER.bat.
+
+The script:
+1. Checks .NET SDK.
+2. Checks Inno Setup 6.
+3. Cleans stale output.
+4. Publishes a self-contained win-x64 single-file EXE.
+5. Enables single-file compression.
+6. Verifies the EXE exists and is under 500 MB.
+7. Compiles the installer.
+8. Verifies the installer exists.
+
+If the EXE is unexpectedly larger than 500 MB, the build stops before Inno Setup
+starts compression.
+
+FINAL OUTPUT
+installer\VoiceGuard_Setup_6.5.5.exe
+
+USER DATA
+%LOCALAPPDATA%\VoiceGuard\config.json
+
+APPLICATION ICON
+The VoiceGuard.ico file is embedded into VoiceGuard.exe during publish, so the installed application, Start Menu shortcut, desktop shortcut, and executable use the VoiceGuard icon.
+
+TASKBAR WINDOW ICON FIX
+The WinForms MainForm explicitly loads VoiceGuard.ico into the window's Icon
+property. This ensures the taskbar gets the same multi-resolution icon rather
+than relying solely on the PE application icon resource.
