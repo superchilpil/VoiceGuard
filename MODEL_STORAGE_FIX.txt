@@ -1,0 +1,7 @@
+VoiceGuard 6.5.5 — Model Storage Fix
+
+Whisper models are now stored under the current user's LocalAppData:
+%LOCALAPPDATA%\VoiceGuard\Models
+
+This avoids writing to Program Files, which is protected by Windows for normal users.
+The working taskbar/AppUserModelID fix and approved icon design are retained.
