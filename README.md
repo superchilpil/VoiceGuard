@@ -1,6 +1,6 @@
 # VoiceGuard
 
-VoiceGuard is a Windows voice-chat profanity filter that captures microphone audio, delays it for filtering, detects configured blocked words/phrases with local Whisper speech recognition, and mutes or replaces offending audio before sending it to the selected output device.
+VoiceGuard is a Windows voice-chat profanity filter that captures microphone audio, delays it for filtering, detects configured blocked words/phrases with local Whisper speech recognition, and mutes or replaces offending audio before sending the audio to the selected output device.
 
 ## Requirements
 
@@ -28,6 +28,14 @@ The latest Windows installer is available from the repository's GitHub Releases 
 6. Add the words or phrases you want VoiceGuard to block.
 7. Hold the configured push-to-talk key while speaking. VoiceGuard processes the captured audio through the configured delay and filters detected blocked words before sending the audio to VB-CABLE.
 8. Release the push-to-talk key when finished speaking.
+
+### Delay
+
+VoiceGuard uses a short audio delay so Whisper has time to transcribe speech and detect blocked words before the audio reaches the output.
+
+- **2.0 seconds is the minimum delay** supported by VoiceGuard and is intended for higher-end machines that can process Whisper quickly enough.
+- If VoiceGuard is **missing words or frequently showing `MISSED` entries** in the log, increase the delay to give Whisper more time to recognize the speech before it reaches the output.
+- Increasing the delay can improve filtering reliability, especially on slower systems or when processing more difficult audio.
 
 ### Blocked Words
 
@@ -74,7 +82,7 @@ To add an alias:
 For example:
 
     Whisper transcription: bits
-    Alias: bag it -> bitch
+    Alias: bits -> bitch
 
 With that alias configured, a transcription of `bits` can be handled as the corresponding blocked word.
 
