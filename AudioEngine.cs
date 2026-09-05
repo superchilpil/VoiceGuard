@@ -24,14 +24,17 @@ public sealed class AudioEngine : IDisposable
     private WaveInEvent? capture;
     private WaveOutEvent? output;
     private BufferedWaveProvider? delayed;
+    private BufferedWaveProvider? live;
     private SwitchProvider? switcher;
 
     private readonly object stateLock = new();
     private readonly object censorLock = new();
     private readonly List<CensorRegion> censorRegions = new();
     private double delayedReadSeconds;
+    private double drainTargetSeconds;
     private bool ptt;
     private bool delayedMode;
+    private bool draining;
     private bool stopped;
     private long capturePackets;
     private long captureBytes;
@@ -69,15 +72,23 @@ public sealed class AudioEngine : IDisposable
             DiscardOnBufferOverflow = false,
             ReadFully = false
         };
+        live = new BufferedWaveProvider(format)
+        {
+            BufferLength = BytesPerSecond * 4,
+            DiscardOnBufferOverflow = true,
+            ReadFully = false
+        };
 
-        // Delayed mode starts immediately. The output timeline therefore always
-        // represents the real capture clock, even before the first PTT press.
-        // Non-PTT packets are written as silence, never as microphone PCM.
-        delayedMode = true;
+        // VoiceGuard is pass-through until PTT is pressed. Once PTT is pressed,
+        // only that PTT segment enters the delayed/filtering path. This prevents
+        // silence from being sent whenever the user is not holding PTT.
+        delayedMode = false;
+        ptt = false;
+        draining = false;
 
         switcher = new SwitchProvider(
-            format, delayed, GetState, () => delaySeconds, () => capturePcmSeconds,
-            IsCensored, GetCensorRegions, GetCensorRegion, status, log);
+            format, delayed, live!, GetState, () => delaySeconds, () => capturePcmSeconds,
+            IsCensored, GetCensorRegions, GetCensorRegion, status, log, FinishDrain);
 
         output = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 80, NumberOfBuffers = 3 };
         output.Init(switcher);
@@ -107,15 +118,15 @@ public sealed class AudioEngine : IDisposable
 
             if (ptt)
             {
-                delayed.AddSamples(e.Buffer, 0, e.BytesRecorded);
+                delayed!.AddSamples(e.Buffer, 0, e.BytesRecorded);
                 var copy = new byte[e.BytesRecorded];
                 Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
                 analysisAudio(copy, copy.Length, packetStartSeconds);
             }
             else
             {
-                // Preserve the global timeline while hard-gating all non-PTT audio.
-                delayed.AddSamples(new byte[e.BytesRecorded], 0, e.BytesRecorded);
+                // Non-PTT audio is passed through normally. We do not send silence.
+                live!.AddSamples(e.Buffer, 0, e.BytesRecorded);
             }
         }
     }
@@ -184,6 +195,18 @@ public sealed class AudioEngine : IDisposable
         lock (censorLock) return censorRegions.Any(r => sourceSeconds >= r.StartSeconds && sourceSeconds < r.EndSeconds);
     }
 
+    private void FinishDrain()
+    {
+        lock (stateLock)
+        {
+            if (!draining) return;
+            draining = false;
+            delayedMode = false;
+            log("PTT DELAY DRAIN COMPLETE — live pass-through resumed.");
+            status("LIVE — PTT released; microphone pass-through active.");
+        }
+    }
+
     public void SetPtt(bool down)
     {
         lock (stateLock)
@@ -192,6 +215,12 @@ public sealed class AudioEngine : IDisposable
             if (down && !ptt)
             {
                 ptt = true;
+                draining = false;
+                delayedMode = true;
+                delayedReadSeconds = capturePcmSeconds;
+                drainTargetSeconds = capturePcmSeconds;
+                delayed?.ClearBuffer();
+                live?.ClearBuffer();
                 analysisSegmentStart?.Invoke(capturePcmSeconds);
                 log($"PTT DOWN — key=Z | source={capturePcmSeconds:0.000}s");
                 status($"PTT HELD — {delaySeconds:0.0}s filtered delay active...");
@@ -199,24 +228,27 @@ public sealed class AudioEngine : IDisposable
             else if (!down && ptt)
             {
                 ptt = false;
+                draining = true;
+                drainTargetSeconds = capturePcmSeconds;
                 analysisSegmentEnd?.Invoke(capturePcmSeconds);
                 log($"PTT UP — key=Z | source={capturePcmSeconds:0.000}s");
-                status("PTT RELEASED — filtered output remains delayed.");
+                status("PTT RELEASED — finishing delayed filtered audio...");
             }
         }
     }
 
     private (bool delayedMode, bool ptt, bool draining) GetState()
     {
-        lock (stateLock) return (delayedMode, ptt, false);
+        lock (stateLock) return (delayedMode, ptt, draining);
     }
 
     public void Stop()
     {
-        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; }
+        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; }
         try { capture?.StopRecording(); } catch { }
         try { output?.Stop(); } catch { }
         delayed?.ClearBuffer();
+        live?.ClearBuffer();
         lock (censorLock) censorRegions.Clear();
     }
 
@@ -244,6 +276,7 @@ public sealed class AudioEngine : IDisposable
     {
         private readonly WaveFormat format;
         private readonly BufferedWaveProvider delayed;
+        private readonly BufferedWaveProvider live;
         private readonly Func<(bool delayedMode,bool ptt,bool draining)> state;
         private readonly Func<double> delay;
         private readonly Func<double> captureSeconds;
@@ -252,26 +285,36 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<double,CensorRegion?> getCensorRegion;
         private readonly Action<string> censorStatus;
         private readonly Action<string> log;
+        private readonly Action finishDrain;
         private double sourceReadSeconds;
         private double lastOutputLogSecond=-1;
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
 
-        public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed,
+        public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, BufferedWaveProvider live,
             Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds,
             Func<double,bool> isCensored, Func<double,double,List<CensorRegion>> getCensorRegions,
-            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log)
+            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Action finishDrain)
         {
-            this.format=format; this.delayed=delayed; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds;
+            this.format=format; this.delayed=delayed; this.live=live; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds;
             this.isCensored=isCensored; this.getCensorRegions=getCensorRegions; this.getCensorRegion=getCensorRegion;
-            this.censorStatus=censorStatus; this.log=log;
+            this.censorStatus=censorStatus; this.log=log; this.finishDrain=finishDrain;
         }
         public WaveFormat WaveFormat=>format;
         public double CurrentSourceSeconds=>sourceReadSeconds;
         public int Read(byte[] buffer,int offset,int count)
         {
             var s=state();
-            if(!s.delayedMode) { Array.Clear(buffer,offset,count); return count; }
 
+            // Normal state: true microphone pass-through.
+            if (!s.delayedMode)
+            {
+                int liveRead = live.Read(buffer, offset, count);
+                if (liveRead < count) Array.Clear(buffer, offset + liveRead, count - liveRead);
+                return count;
+            }
+
+            // While PTT is held, wait until the configured delay has elapsed,
+            // then emit the delayed PTT audio through the censor pipeline.
             double safeSource=Math.Max(0,captureSeconds()-delay());
             if(sourceReadSeconds>=safeSource) { Array.Clear(buffer,offset,count); return count; }
 
@@ -289,8 +332,6 @@ public sealed class AudioEngine : IDisposable
 
             var activeRegions = getCensorRegions(start, end);
 
-            // Mute all safety envelopes first. This guarantees no microphone audio
-            // can leak through when multiple censor envelopes overlap.
             foreach(var region in activeRegions)
             {
                 double a=Math.Max(start,region.StartSeconds), b=Math.Min(end,region.EndSeconds);
@@ -303,12 +344,10 @@ public sealed class AudioEngine : IDisposable
                 Array.Clear(buffer,offset+relStart,n);
             }
 
-            // Overlay replacement effects independently. Each censor event gets
-            // its own effect start, even when the safety envelopes overlap.
             foreach(var region in activeRegions)
             {
                 if(string.IsNullOrWhiteSpace(region.ReplacementSoundPath)) continue;
-                if(!replacementCache.TryGetValue(region.ReplacementSoundPath, out var pcm))
+                if(!replacementCache.TryGetValue(region.ReplacementSoundPath,out var pcm))
                 {
                     pcm=LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
                     replacementCache[region.ReplacementSoundPath]=pcm;
@@ -324,13 +363,27 @@ public sealed class AudioEngine : IDisposable
                 relStart=Math.Clamp(relStart,0,read); relEnd=Math.Clamp(relEnd,relStart,read);
                 relStart-=relStart%2; relEnd-=relEnd%2;
                 int n=relEnd-relStart; if(n<=0) continue;
-
                 TryWriteReplacementRange(buffer,offset+relStart,n,region,effectStart-region.EffectStartSeconds);
             }
 
             sourceReadSeconds += read/(double)format.AverageBytesPerSecond;
+
+            // Once the delayed PTT segment has caught up to the exact PTT release
+            // point, return to true live pass-through. Drop any live packets that
+            // accumulated while the delayed segment was draining so there is no
+            // artificial second delay after PTT is released.
+            var after=state();
+            if(after.draining && sourceReadSeconds >= captureSeconds()-0.005)
+            {
+                live.ClearBuffer();
+                delayed.ClearBuffer();
+                finishDrain();
+            }
+
             return count;
         }
+
+
 
         
         private bool TryWriteReplacementSample(byte[] buffer, int destinationOffset, int bytes, CensorRegion region, double sourceTime)
