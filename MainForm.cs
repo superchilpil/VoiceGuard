@@ -12,12 +12,12 @@ namespace VoiceGuard;
 
 public sealed class MainForm : Form
 {
-    private static readonly Color Bg = Color.FromArgb(10, 8, 14);
+    private static readonly Color Bg = Color.FromArgb(10, 7, 14);
     private static readonly Color Surface = Color.FromArgb(18, 15, 25);
     private static readonly Color Surface2 = Color.FromArgb(24, 20, 34);
     private static readonly Color Border = Color.FromArgb(55, 43, 72);
     private static readonly Color Accent = Color.FromArgb(154, 78, 255);
-    private static readonly Color AccentBright = Color.FromArgb(190, 118, 255);
+    private static readonly Color AccentBright = Color.FromArgb(190, 108, 255);
     private static readonly Color TextMain = Color.FromArgb(238, 234, 245);
     private static readonly Color TextDim = Color.FromArgb(157, 149, 170);
     private static readonly Color Success = Color.FromArgb(117, 235, 171);
@@ -38,7 +38,6 @@ public sealed class MainForm : Form
     private readonly Label mode = new();
     private readonly Label status = new();
     private readonly Button start = new();
-    private readonly Button model = new();
 
     private AudioEngine? engine;
     private PttKeyHook? hook;
@@ -137,7 +136,7 @@ public sealed class MainForm : Form
         };
         root.Controls.Add(header, 0, 0);
 
-        var logo = new LogoPanel { Location = new Point(0, 7), Size = new Size(54, 54) };
+        var logo = new LogoPanel { Location = new Point(0, 6), Size = new Size(54, 54) };
         header.Controls.Add(logo);
 
         header.Controls.Add(new Label
@@ -176,6 +175,10 @@ public sealed class MainForm : Form
             Margin = new Padding(0),
             BackColor = Bg
         };
+        // Fixed semantic layout:
+        //   0 = controls
+        //   1 = blocked words
+        //   2 = logs (RIGHT)
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
@@ -187,7 +190,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 13,
+            RowCount = 12,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -199,8 +202,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); // output label
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // output
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // model heading
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 38)); // model
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // start/stop
+                left.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // start/stop
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // settings heading
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // delay
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // ptt
@@ -226,22 +228,16 @@ public sealed class MainForm : Form
         left.Controls.Add(output, 0, 3);
 
         left.Controls.Add(MakeSectionTitle("MODEL & CONTROL"), 0, 4);
-        model.Text = "Download / Load base.en";
-        StyleButton(model, false);
-        model.Dock = DockStyle.Fill;
-        model.Margin = new Padding(0, 2, 0, 4);
-        model.Click += async (_, _) => await PrepareModelAsync();
-        left.Controls.Add(model, 0, 5);
 
         start.Text = "Start VoiceGuard";
         StyleButton(start, true);
         start.Dock = DockStyle.Fill;
         start.Margin = new Padding(0, 2, 0, 6);
         start.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
-        start.Click += (_, _) => ToggleEngine();
-        left.Controls.Add(start, 0, 6);
+        start.Click += async (_, _) => await ToggleEngineAsync();
+        left.Controls.Add(start, 0, 5);
 
-        left.Controls.Add(MakeSectionTitle("SETTINGS"), 0, 7);
+        left.Controls.Add(MakeSectionTitle("SETTINGS"), 0, 6);
 
         var delayPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         delayPanel.Controls.Add(MakeFieldLabel("Delay"));
@@ -254,7 +250,7 @@ public sealed class MainForm : Form
         delay.Increment = 0.5M;
         delay.Value = 3;
         delayPanel.Controls.Add(delay);
-        left.Controls.Add(delayPanel, 0, 8);
+        left.Controls.Add(delayPanel, 0, 7);
 
         var pttPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         pttPanel.Controls.Add(MakeFieldLabel("PTT key"));
@@ -271,11 +267,11 @@ public sealed class MainForm : Form
             e.SuppressKeyPress = true;
         };
         pttPanel.Controls.Add(ptt);
-        left.Controls.Add(pttPanel, 0, 9);
+        left.Controls.Add(pttPanel, 0, 8);
 
         // A compact status area lives below the fixed controls if there is
         // room; it does not participate in the three primary control order.
-        status.Text = "Download/load base.en before testing detection.";
+        status.Text = "Whisper loads automatically when VoiceGuard starts.";
         status.AutoSize = false;
         status.Dock = DockStyle.Bottom;
         status.Height = 44;
@@ -286,10 +282,10 @@ public sealed class MainForm : Form
         mode.Dock = DockStyle.Fill;
         mode.Height = 30;
         mode.Margin = new Padding(0);
-        left.Controls.Add(mode, 0, 10);
+        left.Controls.Add(mode, 0, 9);
         status.Dock = DockStyle.Fill;
         status.Margin = new Padding(0);
-        left.Controls.Add(status, 0, 11);
+        left.Controls.Add(status, 0, 10);
 
         var jackBrand = new Label
         {
@@ -303,7 +299,7 @@ public sealed class MainForm : Form
             Padding = new Padding(0, 0, 0, 4),
             Margin = new Padding(0)
         };
-        left.Controls.Add(jackBrand, 0, 12);
+        left.Controls.Add(jackBrand, 0, 11);
 
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
@@ -312,8 +308,8 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            Margin = new Padding(0, 0, 8, 0),
-            Padding = new Padding(8, 0, 8, 0),
+            Margin = new Padding(0, 0, 7, 0),
+            Padding = new Padding(8, 0, 7, 0),
             BackColor = Bg
         };
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
@@ -370,7 +366,7 @@ public sealed class MainForm : Form
         StyleButton(addWord, false);
         addWord.Width = 105;
         addWord.Height = 30;
-        addWord.Margin = new Padding(0, 0, 8, 0);
+        addWord.Margin = new Padding(0, 0, 7, 0);
         addWord.Click += (_, _) => AddBlockedWord();
         removeWord.Text = "Remove";
         StyleButton(removeWord, false);
@@ -402,40 +398,55 @@ public sealed class MainForm : Form
         wordsMenu.Items.Add("Remove word", null, (_, _) => RemoveBlockedWord());
         words.ContextMenuStrip = wordsMenu;
 
-        // RIGHT: title and log are isolated in their own two-row layout.
-        var logPanel = new TableLayoutPanel
+        // RIGHT COLUMN ONLY:
+        // Column 0 = controls
+        // Column 1 = blocked words
+        // Column 2 = LOGS
+        //
+        // The log is deliberately hosted in its own right-column panel.
+        // It is never added to the controls column or blocked-words column.
+        var logSection = new Panel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            Margin = new Padding(0),
+            Margin = new Padding(0, 0, 0, 0),
             Padding = new Padding(8, 0, 0, 0),
             BackColor = Bg
         };
-        logPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        logPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        main.Controls.Add(logPanel, 2, 0);
+        main.Controls.Add(logSection, 2, 0);
 
         var logTitle = new Label
         {
             Text = "LOGS",
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
+            Height = 34,
             Font = new Font("Segoe UI", 10F, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0)
+            Margin = new Padding(0),
+            ForeColor = TextMain
         };
-        logPanel.Controls.Add(logTitle, 0, 0);
+        logSection.Controls.Add(logTitle);
+
+        var logHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            Padding = new Padding(10),
+            BackColor = Color.FromArgb(18, 15, 25),
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        logSection.Controls.Add(logHost);
+        logHost.BringToFront();
 
         log.Multiline = true;
-        log.ScrollBars = ScrollBars.Both;
+        log.ScrollBars = ScrollBars.Vertical;
         log.ReadOnly = true;
         log.Dock = DockStyle.Fill;
         log.Margin = new Padding(0);
-        log.WordWrap = false;
+        log.WordWrap = true;
         log.BackColor = Color.FromArgb(24, 24, 24);
         log.ForeColor = Color.Gainsboro;
         log.Font = new Font("Consolas", 9F);
-        logPanel.Controls.Add(log, 0, 1);
+        logHost.Controls.Add(log);
 
         delay.ValueChanged += (_, _) => SavePersistence();
         ptt.KeyDown += (_, _) => SavePersistence();
@@ -707,7 +718,6 @@ public sealed class MainForm : Form
     {
         try
         {
-            model.Enabled = false;
             SetStatus("Preparing Whisper base.en model...");
 
             detector?.SetWords(GetWords());
@@ -734,7 +744,6 @@ public sealed class MainForm : Form
         }
         finally
         {
-            model.Enabled = true;
         }
     }
 
@@ -1046,8 +1055,8 @@ public sealed class MainForm : Form
 
         var label = new Label { Text = labelText, AutoSize = true, Location = new Point(15, 15) };
         var box = new TextBox { Location = new Point(15, 40), Width = 330 };
-        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(180, 80), Width = 70 };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(270, 80), Width = 70 };
+        var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Location = new Point(180, 70), Width = 70 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Location = new Point(270, 70), Width = 70 };
         dialog.Controls.AddRange(new Control[] { label, box, ok, cancel });
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
@@ -1055,15 +1064,18 @@ public sealed class MainForm : Form
         return dialog.ShowDialog() == DialogResult.OK ? box.Text : null;
     }
 
-    private void ToggleEngine()
+    private async Task ToggleEngineAsync()
     {
         if (engine != null)
+        {
             StopEngine();
-        else
-            StartEngine();
+            return;
+        }
+
+        await StartEngineAsync();
     }
 
-    private void StartEngine()
+    private async Task StartEngineAsync()
     {
         if (input.SelectedItem is not AudioDeviceInfo inDev ||
             output.SelectedItem is not AudioDeviceInfo outDev)
@@ -1072,13 +1084,21 @@ public sealed class MainForm : Form
             return;
         }
 
+        try
+        {
+            start.Enabled = false;
+            AddLog("WHISPER STARTING: checking model...");
+            await PrepareModelAsync();
+        }
+        catch
+        {
+            start.Enabled = true;
+            return;
+        }
+
         if (detector == null || !detector.IsReady)
         {
-            MessageBox.Show(
-                "Download/load the Whisper model first.",
-                "VoiceGuard",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            start.Enabled = true;
             return;
         }
 
@@ -1175,13 +1195,62 @@ public sealed class MainForm : Form
     {
         if (IsDisposed) return;
 
+        // Keep the on-screen log human-readable. The detector produces many
+        // internal timing/queue/audio diagnostics that are useful while
+        // developing VoiceGuard but are not useful to a normal user.
+        //
+        // HEARD    = exactly what Whisper transcribed
+        // FILTERED = a blocked word was successfully scheduled
+        // MISSED   = a blocked word was detected too late to censor
+        //
+        // Keeping the raw Whisper phrase makes it easy to discover
+        // transcription mistakes that may need an alias.
+        string? userLog = null;
+
+        if (text.StartsWith("HEARD: ", StringComparison.OrdinalIgnoreCase))
+        {
+            // SpeechDetector emits this marker directly from the raw Whisper
+            // result. Do not alter it: this is the text users need when
+            // creating transcription aliases for misheard words.
+            userLog = text.Trim();
+        }
+        else if (text.StartsWith("Speech recognition READY", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = "WHISPER READY: " + text["Speech recognition READY".Length..].Trim().TrimStart('—', '-').Trim();
+        }
+        else if (text.StartsWith("WHISPER STARTING:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
+        }
+        else if (text.StartsWith("Whisper warm-up starting", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = "WHISPER STARTING: warm-up...";
+        }
+        else if (text.StartsWith("Whisper warm-up complete", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = "WHISPER READY: warm-up complete.";
+        }
+        else if (text.StartsWith("CENSOR MISSED — ", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = "MISSED: " + text["CENSOR MISSED — ".Length..].Trim();
+        }
+        else if (text.StartsWith("CENSOR SCHEDULED — ", StringComparison.OrdinalIgnoreCase))
+        {
+            string details = text["CENSOR SCHEDULED — ".Length..].Trim();
+            int separator = details.IndexOf(" PCM=", StringComparison.Ordinal);
+            userLog = "FILTERED: " + (separator >= 0 ? details[..separator].Trim() : details);
+        }
+
+        if (userLog == null)
+            return;
+
         if (InvokeRequired)
         {
-            BeginInvoke(() => AddLog(text));
+            BeginInvoke(() => AddLog(userLog));
             return;
         }
 
-        log.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}{Environment.NewLine}");
+        log.AppendText($"[{DateTime.Now:HH:mm:ss}] {userLog}{Environment.NewLine}");
     }
 
     private void SetMode(string text)

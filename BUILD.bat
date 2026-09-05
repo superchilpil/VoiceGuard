@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo VoiceGuard 6.5.5
+echo VoiceGuard 6.5.6
 echo.
 echo For the complete one-click EXE + installer build, run:
 echo.

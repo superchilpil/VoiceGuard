@@ -498,9 +498,10 @@ public sealed class SpeechDetector : IAsyncDisposable
 
             foreach (var phrase in recognized)
             {
-                log(
-                    $"Speech GLOBAL @ {window.AbsoluteStart:0.000}s " +
-                    $"({window.Duration:0.000}s audio): {phrase}");
+                // Dedicated user-facing transcription event. MainForm filters
+                // for this marker so every phrase Whisper actually recognized
+                // is visible in the scrollable log for alias discovery.
+                log($"HEARD: {phrase}");
 
                 CheckForCandidates(phrase, window);
             }
