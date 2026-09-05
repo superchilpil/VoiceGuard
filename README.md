@@ -73,8 +73,8 @@ To add an alias:
 
 For example:
 
-    Whisper transcription: bag it
-    Alias: bag it -> faggot
+    Whisper transcription: bits
+    Alias: bag it -> bitch
 
 With that alias configured, a transcription of `bag it` can be handled as the corresponding blocked word.
 
