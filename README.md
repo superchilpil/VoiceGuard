@@ -125,10 +125,8 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - Transcription aliases
 - Per-word replacement sound effects
 - Adjustable PTT filtering delay
-- Push-to-talk support
 - Input/output device selection
 - Persistent settings stored in the user's local application data
-- Windows taskbar/application icon
 
 ## Building
 
