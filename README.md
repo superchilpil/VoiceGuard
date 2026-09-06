@@ -8,6 +8,7 @@ VoiceGuard is a Windows voice-chat profanity filter that captures microphone aud
 - .NET 8 SDK (only required if building from source)
 - A microphone/input device
 - **VB-Audio Virtual Cable (VB-CABLE)**
+- Intel NPU support is optional; compatible Intel systems can use OpenVINO NPU acceleration for Whisper
 
 VoiceGuard is designed to route its filtered audio through VB-CABLE.
 
@@ -88,9 +89,23 @@ With that alias configured, a transcription of `bits` can be handled as the corr
 
 Aliases are useful when pronunciation, background noise, microphone quality, or Whisper's speech recognition causes a blocked word to be transcribed differently from how it was actually spoken.
 
+## Intel NPU / OpenVINO Acceleration
+
+**VoiceGuard 6.6** adds optional Intel OpenVINO NPU acceleration for Whisper speech recognition.
+
+- Compatible Intel systems can use the **Intel NPU** for Whisper's OpenVINO encoder.
+- VoiceGuard automatically attempts the NPU path when the required Intel/OpenVINO runtime is available.
+- Systems without compatible NPU support continue to use the CPU Whisper runtime.
+- NPU acceleration is isolated to Whisper initialization and does not change VoiceGuard's audio routing, PTT, delay, or censor scheduling pipeline.
+- The startup log reports whether OpenVINO is selected and whether the NPU encoder was requested.
+
+The NPU path is optional. VoiceGuard remains usable on systems that do not have a compatible Intel NPU.
+
 ## Features
 
 - Local Whisper speech recognition
+- Optional Intel OpenVINO/NPU Whisper acceleration
+- CPU Whisper fallback
 - Configurable blocked words and phrases
 - Transcription aliases
 - Per-word replacement sound effects
@@ -99,16 +114,14 @@ Aliases are useful when pronunciation, background noise, microphone quality, or 
 - Input/output device selection
 - Persistent settings stored in the user's local application data
 - Windows taskbar/application icon
-- CPU-only Whisper runtime for a smaller deployment
 
 ## Building
-
 
 For a self-contained Windows x64 publish and installer build:
 
     BUILD_INSTALLER.bat
 
-The published application intentionally keeps Whisper's native runtime files in the `runtimes\\win-x64` directory. Do not convert the application to a single-file publish, because Whisper's native runtime layout is required.
+`BUILD_INSTALLER.bat` is the project's single build script. The published application intentionally keeps Whisper's native runtime files in the `runtimes` directory. Do not convert the application to a single-file publish, because Whisper's native runtime layout is required.
 
 ## Models
 
