@@ -1222,6 +1222,14 @@ public sealed class MainForm : Form
         {
             userLog = text.Trim();
         }
+        else if (text.StartsWith("WHISPER RUNTIME:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
+        }
+        else if (text.StartsWith("WHISPER ACCELERATION:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
+        }
         else if (text.StartsWith("Whisper warm-up starting", StringComparison.OrdinalIgnoreCase))
         {
             userLog = "WHISPER STARTING: warm-up...";

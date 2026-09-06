@@ -1,13 +1,13 @@
 @echo off
 setlocal EnableExtensions
-title VoiceGuard 6.5.6 - Build Installer
+title VoiceGuard 6.6 - Build Installer
 
 cd /d "%~dp0"
 
 echo ============================================================
-echo   VoiceGuard 6.5.6 - One-Click Installer Build
+echo   VoiceGuard 6.6 - One-Click Installer Build
 echo   Jack The Gooner
-echo   CPU-only Whisper runtime / x64
+echo   OpenVINO/NPU + CPU fallback / x64
 echo ============================================================
 echo.
 
@@ -53,7 +53,7 @@ mkdir "installer"
 echo.
 
 REM ---- Publish self-contained x64 multi-file app ----
-echo [4/6] Publishing VoiceGuard with CPU-only Whisper runtime...
+echo [4/6] Publishing VoiceGuard with OpenVINO/NPU + CPU fallback Whisper runtime...
 echo Native Whisper runtime is intentionally kept beside VoiceGuard.exe.
 dotnet publish "VoiceGuard.csproj" ^
   -c Release ^
@@ -142,7 +142,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "installer\VoiceGuard_Setup_6.5.6.exe" (
+if not exist "installer\VoiceGuard_Setup_6.6.exe" (
     echo.
     echo [ERROR] Inno Setup reported success, but the installer was not found.
     echo.
@@ -150,7 +150,7 @@ if not exist "installer\VoiceGuard_Setup_6.5.6.exe" (
     exit /b 1
 )
 
-for %%A in ("installer\VoiceGuard_Setup_6.5.6.exe") do set "SETUPSIZE=%%~zA"
+for %%A in ("installer\VoiceGuard_Setup_6.6.exe") do set "SETUPSIZE=%%~zA"
 
 echo.
 echo [6/6] Final verification...
@@ -165,7 +165,7 @@ echo VoiceGuard EXE:
 echo %CD%\publish\VoiceGuard.exe
 echo.
 echo Installer:
-echo %CD%\installer\VoiceGuard_Setup_6.5.6.exe
+echo %CD%\installer\VoiceGuard_Setup_6.6.exe
 echo.
 pause
 exit /b 0

@@ -21,5 +21,8 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime.OpenVino" Version="1.9.1" />
+    <!-- Whisper.net 1.9.1 OpenVINO runtime is built/tested against OpenVINO 2024.4+. Pinning 2024.4 avoids newer OpenVINO ABI changes. -->
+    <PackageReference Include="OpenVINO.runtime.win" Version="2024.4.0.1" />
   </ItemGroup>
 </Project>

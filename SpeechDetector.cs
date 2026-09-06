@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Whisper.net;
 using Whisper.net.Ggml;
+using Whisper.net.LibraryLoader;
 
 namespace VoiceGuard;
 
@@ -195,12 +196,51 @@ public sealed class SpeechDetector : IAsyncDisposable
                 $"base.en model is too small ({size / 1024 / 1024} MB). Delete Models and download it again.");
 
         factory?.Dispose();
+
+        if (WhisperOpenVinoBackend.IsIntelPlatform())
+        {
+            RuntimeOptions.RuntimeLibraryOrder =
+            [RuntimeLibrary.OpenVino, RuntimeLibrary.Cpu];
+        }
+        else
+        {
+            RuntimeOptions.RuntimeLibraryOrder =
+            [RuntimeLibrary.Cpu];
+        }
+
         factory = WhisperFactory.FromPath(modelPath);
+        log($"WHISPER RUNTIME: {RuntimeOptions.LoadedLibrary?.ToString() ?? "unknown"}");
 
         processor?.Dispose();
-        processor = factory.CreateBuilder()
-            .WithLanguage("en")
-            .Build();
+
+        var builder = factory.CreateBuilder()
+            .WithLanguage("en");
+
+        // Optional Intel NPU acceleration. This touches only Whisper initialization;
+        // the audio engine, PTT state machine, VAD, candidate clustering, and censor
+        // scheduling remain unchanged. The OpenVINO runtime exposes the device choice
+        // through the public Whisper.net API.
+        if (WhisperOpenVinoBackend.IsIntelPlatform() &&
+            RuntimeOptions.LoadedLibrary == RuntimeLibrary.OpenVino)
+        {
+            var openVino = await WhisperOpenVinoBackend.PrepareNpuAsync(
+                GetModelDirectory(), log);
+
+            if (openVino != null)
+            {
+                builder = builder.WithOpenVinoEncoder(
+                    openVino.Value.EncoderXmlPath,
+                    "NPU",
+                    openVino.Value.CacheDirectory);
+                log("WHISPER ACCELERATION: Intel OpenVINO NPU encoder requested.");
+            }
+            else
+            {
+                log("WHISPER ACCELERATION: NPU encoder unavailable — using OpenVINO CPU fallback.");
+            }
+        }
+
+        processor = builder.Build();
 
         log("Speech recognition READY — model: base.en");
 
