@@ -65,27 +65,28 @@ To remove one, select it and click **Remove**.
 
 ## Replacement Sound Effects
 
-VoiceGuard can replace a detected blocked word with a WAV sound effect instead of simply muting that portion of PTT audio.
+VoiceGuard can replace a detected blocked word with a custom sound instead of muting it. Each blocked word can have its own replacement sound and playback duration.
 
-To assign a sound effect:
+### Assigning a Replacement Sound
 
 1. Add the word or phrase to **Blocked Words**.
-2. Right-click that word in the list.
-3. Choose the replacement-sound option.
-4. Select the `.wav` file you want to use.
-5. The assignment is saved automatically.
+2. Right-click the word and choose the replacement-sound option.
+3. Select the audio file. VoiceGuard converts a copy to its internal WAV/PCM format in the background; the original file is never modified.
 
-Each blocked word can have its own replacement sound. If consecutive blocked words are detected, their replacement effects are played as separate events rather than being merged into one effect.
+Imported replacement audio is automatically trimmed to a maximum of **5 seconds**. A 5-second runtime safety limit also applies to existing WAV replacement files.
 
-To remove a replacement sound assignment, use the same right-click menu for the word and choose the option to clear its replacement sound.
+### Playback Duration
 
-### Replacement Audio Format
+Each blocked word has its own playback-duration setting. Right-click the word and open **replacement playback settings** to choose:
 
-VoiceGuard uses **WAV files for replacement/censor sounds** because they provide predictable, low-overhead PCM audio that is well suited to real-time voice processing and precise audio replacement.
+- **Word length** — plays the replacement for the detected offending word/event duration.
+- **Custom length** — plays the replacement for a selected duration from **0.1 to 5.0 seconds**, in 0.1-second increments.
 
-Replacement sounds are loaded and converted into the format VoiceGuard needs before playback, avoiding additional decoding work during a live censor event.
+The selected duration is saved separately for each blocked word. Replacement playback continues through the selected duration even if PTT is released, then VoiceGuard returns to live passthrough.
 
-**WAV is the only replacement-audio format currently supported.** This is intentional, and there are currently **no plans to add support for MP3, FLAC, OGG, or other audio formats**, as the added format support would provide little practical benefit for VoiceGuard's short replacement sounds while adding unnecessary complexity.
+Replacement audio is converted and prepared before real-time censor playback, so codec conversion is not performed during live PTT processing. Consecutive blocked words remain separate events, allowing each replacement to use its own sound and playback setting.
+
+To remove a replacement sound, use the word's right-click menu and choose the option to clear it.
 
 ## Transcription Aliases
 
@@ -131,8 +132,9 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - CPU Whisper fallback
 - Configurable blocked words and phrases
 - Transcription aliases
-- Per-word replacement sound effects
-- WAV replacement-audio support
+- Per-word replacement sounds and playback-duration settings
+- Replacement audio conversion to WAV/PCM
+- 5-second maximum replacement-audio limit
 - Adjustable PTT filtering delay
 - Input/output device selection
 - Persistent settings stored in the user's local application data
@@ -170,7 +172,7 @@ Personally I use VoiceMeeter Banana in conjunction with this to switch from dire
 
 ## Settings and Persistence
 
-VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, delay, push-to-talk key, and selected audio devices.
+VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, delay, push-to-talk key, and selected audio devices.
 
 Settings are stored under:
 
