@@ -12,6 +12,12 @@ VoiceGuard has two audio paths depending on whether you are pressing your config
 
 This design is intended for games where you normally communicate by holding a push-to-talk key. Audio that you are not intentionally transmitting through PTT is not filtered or transcribed by VoiceGuard.
 
+### PTT and Elevated Applications
+
+VoiceGuard's global PTT detection can be affected when a **higher-privilege/elevated application** is in the foreground. For example, Windows Task Manager runs elevated and may prevent VoiceGuard from receiving the PTT key while Task Manager has focus.
+
+If PTT stops responding only when an elevated application is in the foreground, this is a Windows security/privilege boundary rather than a VoiceGuard audio-processing failure. Running VoiceGuard as **Administrator** allows PTT to work with elevated foreground applications, but VoiceGuard does not normally require administrator privileges.
+
 ## Requirements
 
 - Windows 10/11, 64-bit
@@ -138,6 +144,7 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - Adjustable PTT filtering delay
 - Input/output device selection
 - Persistent settings stored in the user's local application data
+- Single-instance protection to prevent multiple VoiceGuard audio engines from running at once
 
 ## Building
 
