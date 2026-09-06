@@ -103,11 +103,6 @@ Aliases are useful when pronunciation, background noise, microphone quality, or 
 
 ## Building
 
-Open a Developer Command Prompt or PowerShell in the repository directory.
-
-Build:
-
-    BUILD.bat
 
 For a self-contained Windows x64 publish and installer build:
 
@@ -133,6 +128,8 @@ A typical setup is:
         -> Voice chat application
 
 Configure the voice-chat application to use the VB-CABLE recording/input side as its microphone source.
+
+Personally I use VoiceMeeter Banana in conjunction with this to switch from direct Mic input and VG depending on the game to conserve resources
 
 ## Settings and Persistence
 
