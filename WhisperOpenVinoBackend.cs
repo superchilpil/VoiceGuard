@@ -80,7 +80,7 @@ internal static class WhisperOpenVinoBackend
         {
             Timeout = TimeSpan.FromMinutes(10)
         };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("VoiceGuard/6.6");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("VoiceGuard/6.6.1.1");
 
         await using (var input = await client.GetStreamAsync(url))
         await using (var output = new FileStream(

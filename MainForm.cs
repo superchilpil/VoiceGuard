@@ -850,7 +850,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private void SetReplacementSoundForSelectedWord()
+    private async void SetReplacementSoundForSelectedWord()
     {
         if (words.SelectedItem is null) return;
         string word = words.SelectedItem.ToString() ?? "";
@@ -858,17 +858,33 @@ public sealed class MainForm : Form
         using var dialog = new OpenFileDialog
         {
             Title = $"Choose replacement sound — {word}",
-            Filter = "WAV audio (*.wav)|*.wav|All files (*.*)|*.*",
+            Filter = "Audio files|*.wav;*.mp3;*.m4a;*.aac;*.wma;*.flac;*.ogg|WAV audio (*.wav)|*.wav|All files (*.*)|*.*",
             CheckFileExists = true,
             Multiselect = false
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
 
-        replacementSounds[word] = dialog.FileName;
-        words.Invalidate();
-        SavePersistence();
-        AddLog($"Replacement sound set: \"{word}\" → {dialog.FileName}");
+        string sourcePath = dialog.FileName;
+        string selectedWord = word;
+
+        try
+        {
+            SetStatus("Preparing replacement sound...");
+            string importedPath = await Task.Run(() => ReplacementSoundImporter.Import(sourcePath, AddLog));
+
+            if (IsDisposed) return;
+
+            replacementSounds[selectedWord] = importedPath;
+            words.Invalidate();
+            SavePersistence();
+            SetStatus("Replacement sound ready.");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"REPLACEMENT ERROR: {Path.GetFileName(sourcePath)} — {ex.Message}");
+            SetStatus("Replacement sound could not be loaded.");
+        }
     }
 
     private void ClearReplacementSoundForSelectedWord()
@@ -1241,6 +1257,22 @@ public sealed class MainForm : Form
         else if (text.StartsWith("CENSOR MISSED — ", StringComparison.OrdinalIgnoreCase))
         {
             userLog = "MISSED: " + text["CENSOR MISSED — ".Length..].Trim();
+        }
+        else if (text.StartsWith("CONVERTING:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
+        }
+        else if (text.StartsWith("TRIMMING:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
+        }
+        else if (text.StartsWith("READY:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
+        }
+        else if (text.StartsWith("REPLACEMENT ERROR:", StringComparison.OrdinalIgnoreCase))
+        {
+            userLog = text.Trim();
         }
         else if (text.StartsWith("CENSOR SCHEDULED — ", StringComparison.OrdinalIgnoreCase))
         {

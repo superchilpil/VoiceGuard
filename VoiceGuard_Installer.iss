@@ -1,5 +1,5 @@
 #define MyAppName "VoiceGuard"
-#define MyAppVersion "6.6"
+#define MyAppVersion "6.6.1"
 #define MyAppPublisher "Jack The Gooner"
 #define MyAppExeName "VoiceGuard.exe"
 
@@ -8,10 +8,10 @@ AppId={{8D8D4B3E-0F5D-4A75-A3C8-7B5D4F5A6D51}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\\VoiceGuard\\6.6
+DefaultDirName={autopf}\\VoiceGuard\\6.6.1
 DefaultGroupName=VoiceGuard
 OutputDir=installer
-OutputBaseFilename=VoiceGuard_Setup_6.6
+OutputBaseFilename=VoiceGuard_Setup_6.6.1
 Compression=lzma
 SolidCompression=yes
 ArchitecturesAllowed=x64

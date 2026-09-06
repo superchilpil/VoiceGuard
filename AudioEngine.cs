@@ -44,6 +44,7 @@ public sealed class AudioEngine : IDisposable
     private const int Channels = 1;
     private const int Bits = 16;
     private const int BytesPerSecond = SampleRate * Channels * Bits / 8;
+    private const double MaxReplacementDurationSeconds = 5.0;
 
     public AudioEngine(
         int inputDevice, int outputDevice, double delaySeconds, Action<string> status,
@@ -530,12 +531,17 @@ public sealed class AudioEngine : IDisposable
                 return Array.Empty<byte>();
 
             long maxFramesLong = reader.Length / frameBytes;
-            if (maxFramesLong <= 0 || maxFramesLong > int.MaxValue)
+            if (maxFramesLong <= 0)
                 return Array.Empty<byte>();
-            int inputFrames = (int)maxFramesLong;
+
+            // Runtime safety: never even load more than the first five seconds
+            // of a replacement WAV into memory. This protects against existing
+            // or manually assigned WAV files that predate the import limiter.
+            long maxInputFrames = (long)Math.Ceiling(wf.SampleRate * MaxReplacementDurationSeconds);
+            int inputFrames = (int)Math.Min(maxFramesLong, maxInputFrames);
 
             var mono = new float[inputFrames];
-            byte[] raw = new byte[(int)reader.Length];
+            byte[] raw = new byte[inputFrames * frameBytes];
             int rawRead = 0;
             while (rawRead < raw.Length)
             {
@@ -554,6 +560,8 @@ public sealed class AudioEngine : IDisposable
             }
 
             int outputFrames = Math.Max(1, (int)Math.Round(inputFrames * (format.SampleRate / (double)wf.SampleRate)));
+            int maxOutputFrames = (int)Math.Floor(format.SampleRate * MaxReplacementDurationSeconds);
+            outputFrames = Math.Min(outputFrames, maxOutputFrames);
             byte[] output = new byte[outputFrames * 2];
             double ratio = wf.SampleRate / (double)format.SampleRate;
 
