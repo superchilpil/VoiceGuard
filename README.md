@@ -65,27 +65,31 @@ To remove one, select it and click **Remove**.
 
 ## Replacement Sound Effects
 
-VoiceGuard can replace a detected blocked word with a WAV sound effect instead of simply muting that portion of PTT audio.
+VoiceGuard can replace a detected blocked word with a replacement sound instead of simply muting that portion of PTT audio.
 
 To assign a sound effect:
 
 1. Add the word or phrase to **Blocked Words**.
 2. Right-click that word in the list.
 3. Choose the replacement-sound option.
-4. Select the `.wav` file you want to use.
+4. Select the audio file you want to use.
 5. The assignment is saved automatically.
 
 Each blocked word can have its own replacement sound. If consecutive blocked words are detected, their replacement effects are played as separate events rather than being merged into one effect.
 
 To remove a replacement sound assignment, use the same right-click menu for the word and choose the option to clear its replacement sound.
 
-### Replacement Audio Format
+### Replacement Audio Format and Playback
 
-VoiceGuard uses **WAV files for replacement/censor sounds** because they provide predictable, low-overhead PCM audio that is well suited to real-time voice processing and precise audio replacement.
+VoiceGuard's replacement system ultimately uses **WAV/PCM audio** for predictable, low-overhead real-time playback. You are **not limited to selecting WAV files** when assigning a replacement sound. When you select a supported non-WAV audio file, VoiceGuard converts a copy to WAV in the background and stores the converted copy in VoiceGuard's local replacement-sound directory. The original file is never modified.
 
-Replacement sounds are loaded and converted into the format VoiceGuard needs before playback, avoiding additional decoding work during a live censor event.
+To keep stored replacement files small, imported audio is automatically limited to a **maximum of 5 seconds**. If the selected file is longer than 5 seconds, VoiceGuard keeps only the first 5 seconds of the converted copy. This trimming applies to imported non-WAV files as part of the conversion process.
 
-**WAV is the only replacement-audio format currently supported.** This is intentional, and there are currently **no plans to add support for MP3, FLAC, OGG, or other audio formats**, as the added format support would provide little practical benefit for VoiceGuard's short replacement sounds while adding unnecessary complexity.
+Replacement audio also has an independent **5-second runtime safety limit**. This applies to WAV files as well, including WAV replacement sounds that were already present before the conversion feature was added. VoiceGuard will never allow a replacement sound to occupy the output for longer than 5 seconds.
+
+The replacement sound does **not necessarily play for its full stored length**. When a blocked word is detected, the replacement audio is played for the duration of the offending word/event, up to the 5-second maximum. This prevents a long replacement sound from unnecessarily taking over the voice transmission when the offending word itself is brief.
+
+The conversion and trimming happen before the audio enters the real-time censoring path, so additional codec decoding is not performed during live censor playback.
 
 ## Transcription Aliases
 
@@ -132,7 +136,9 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - Configurable blocked words and phrases
 - Transcription aliases
 - Per-word replacement sound effects
-- WAV replacement-audio support
+- Replacement audio conversion to WAV
+- Automatic 5-second replacement-audio limit
+- Replacement playback matched to the offending word/event duration
 - Adjustable PTT filtering delay
 - Input/output device selection
 - Persistent settings stored in the user's local application data
