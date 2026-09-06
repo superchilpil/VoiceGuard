@@ -65,31 +65,28 @@ To remove one, select it and click **Remove**.
 
 ## Replacement Sound Effects
 
-VoiceGuard can replace a detected blocked word with a replacement sound instead of simply muting that portion of PTT audio.
+VoiceGuard can replace a detected blocked word with a custom sound instead of muting it. Each blocked word can have its own replacement sound and playback duration.
 
-To assign a sound effect:
+### Assigning a Replacement Sound
 
 1. Add the word or phrase to **Blocked Words**.
-2. Right-click that word in the list.
-3. Choose the replacement-sound option.
-4. Select the audio file you want to use.
-5. The assignment is saved automatically.
+2. Right-click the word and choose the replacement-sound option.
+3. Select the audio file. VoiceGuard converts a copy to its internal WAV/PCM format in the background; the original file is never modified.
 
-Each blocked word can have its own replacement sound. If consecutive blocked words are detected, their replacement effects are played as separate events rather than being merged into one effect.
+Imported replacement audio is automatically trimmed to a maximum of **5 seconds**. A 5-second runtime safety limit also applies to existing WAV replacement files.
 
-To remove a replacement sound assignment, use the same right-click menu for the word and choose the option to clear its replacement sound.
+### Playback Duration
 
-### Replacement Audio Format and Playback
+Each blocked word has its own playback-duration setting. Right-click the word and open **replacement playback settings** to choose:
 
-VoiceGuard's replacement system ultimately uses **WAV/PCM audio** for predictable, low-overhead real-time playback. You are **not limited to selecting WAV files** when assigning a replacement sound. When you select a supported non-WAV audio file, VoiceGuard converts a copy to WAV in the background and stores the converted copy in VoiceGuard's local replacement-sound directory. The original file is never modified.
+- **Word length** — plays the replacement for the detected offending word/event duration.
+- **Custom length** — plays the replacement for a selected duration from **0.1 to 5.0 seconds**, in 0.1-second increments.
 
-To keep stored replacement files small, imported audio is automatically limited to a **maximum of 5 seconds**. If the selected file is longer than 5 seconds, VoiceGuard keeps only the first 5 seconds of the converted copy. This trimming applies to imported non-WAV files as part of the conversion process.
+The selected duration is saved separately for each blocked word. Replacement playback continues through the selected duration even if PTT is released, then VoiceGuard returns to live passthrough.
 
-Replacement audio also has an independent **5-second runtime safety limit**. This applies to WAV files as well, including WAV replacement sounds that were already present before the conversion feature was added. VoiceGuard will never allow a replacement sound to occupy the output for longer than 5 seconds.
+Replacement audio is converted and prepared before real-time censor playback, so codec conversion is not performed during live PTT processing. Consecutive blocked words remain separate events, allowing each replacement to use its own sound and playback setting.
 
-The replacement sound does **not necessarily play for its full stored length**. When a blocked word is detected, the replacement audio is played for the duration of the offending word/event, up to the 5-second maximum. This prevents a long replacement sound from unnecessarily taking over the voice transmission when the offending word itself is brief.
-
-The conversion and trimming happen before the audio enters the real-time censoring path, so additional codec decoding is not performed during live censor playback.
+To remove a replacement sound, use the word's right-click menu and choose the option to clear it.
 
 ## Transcription Aliases
 
@@ -135,10 +132,9 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - CPU Whisper fallback
 - Configurable blocked words and phrases
 - Transcription aliases
-- Per-word replacement sound effects
-- Replacement audio conversion to WAV
-- Automatic 5-second replacement-audio limit
-- Replacement playback matched to the offending word/event duration
+- Per-word replacement sounds and playback-duration settings
+- Replacement audio conversion to WAV/PCM
+- 5-second maximum replacement-audio limit
 - Adjustable PTT filtering delay
 - Input/output device selection
 - Persistent settings stored in the user's local application data
@@ -176,7 +172,7 @@ Personally I use VoiceMeeter Banana in conjunction with this to switch from dire
 
 ## Settings and Persistence
 
-VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, delay, push-to-talk key, and selected audio devices.
+VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, delay, push-to-talk key, and selected audio devices.
 
 Settings are stored under:
 
