@@ -79,6 +79,14 @@ Each blocked word can have its own replacement sound. If consecutive blocked wor
 
 To remove a replacement sound assignment, use the same right-click menu for the word and choose the option to clear its replacement sound.
 
+### Replacement Audio Format
+
+VoiceGuard uses **WAV files for replacement/censor sounds** because they provide predictable, low-overhead PCM audio that is well suited to real-time voice processing and precise audio replacement.
+
+Replacement sounds are loaded and converted into the format VoiceGuard needs before playback, avoiding additional decoding work during a live censor event.
+
+**WAV is the only replacement-audio format currently supported.** This is intentional, and there are currently **no plans to add support for MP3, FLAC, OGG, or other audio formats**, as the added format support would provide little practical benefit for VoiceGuard's short replacement sounds while adding unnecessary complexity.
+
 ## Transcription Aliases
 
 An **alias** tells VoiceGuard to treat a phrase that Whisper commonly transcribes incorrectly as a different blocked word or phrase.
@@ -124,6 +132,7 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - Configurable blocked words and phrases
 - Transcription aliases
 - Per-word replacement sound effects
+- WAV replacement-audio support
 - Adjustable PTT filtering delay
 - Input/output device selection
 - Persistent settings stored in the user's local application data
