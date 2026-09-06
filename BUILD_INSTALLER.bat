@@ -1,11 +1,11 @@
 @echo off
 setlocal EnableExtensions
-title VoiceGuard 6.6.1.1 - Build Installer
+title VoiceGuard 6.6.2 - Build Installer
 
 cd /d "%~dp0"
 
 echo ============================================================
-echo   VoiceGuard 6.6.1.1 - One-Click Installer Build
+echo   VoiceGuard 6.6.2 - One-Click Installer Build
 echo   Jack The Gooner
 echo   OpenVINO/NPU + CPU fallback / x64
 echo ============================================================
@@ -142,7 +142,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-if not exist "installer\VoiceGuard_Setup_6.6.1.1.exe" (
+if not exist "installer\VoiceGuard_Setup_6.6.2.exe" (
     echo.
     echo [ERROR] Inno Setup reported success, but the installer was not found.
     echo.
@@ -150,7 +150,7 @@ if not exist "installer\VoiceGuard_Setup_6.6.1.1.exe" (
     exit /b 1
 )
 
-for %%A in ("installer\VoiceGuard_Setup_6.6.1.1.exe") do set "SETUPSIZE=%%~zA"
+for %%A in ("installer\VoiceGuard_Setup_6.6.2.exe") do set "SETUPSIZE=%%~zA"
 
 echo.
 echo [6/6] Final verification...
@@ -165,7 +165,7 @@ echo VoiceGuard EXE:
 echo %CD%\publish\VoiceGuard.exe
 echo.
 echo Installer:
-echo %CD%\installer\VoiceGuard_Setup_6.6.1.1.exe
+echo %CD%\installer\VoiceGuard_Setup_6.6.2.exe
 echo.
 pause
 exit /b 0

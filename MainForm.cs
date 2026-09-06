@@ -34,6 +34,8 @@ public sealed class MainForm : Form
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> replacementSounds =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ReplacementPlaybackSettings> replacementPlaybackSettings =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly TextBox log = new();
     private readonly Label mode = new();
     private readonly Label status = new();
@@ -69,6 +71,7 @@ public sealed class MainForm : Form
         public List<string> BlockedWords { get; set; } = new();
         public Dictionary<string, List<string>> Aliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string?> ReplacementSounds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, ReplacementPlaybackSettings> ReplacementPlayback { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public decimal DelaySeconds { get; set; } = 3M;
         public string PttKey { get; set; } = Keys.Z.ToString();
         public string? InputDevice { get; set; }
@@ -103,7 +106,7 @@ public sealed class MainForm : Form
     {
         ApplyWindowAndTaskbarIcon();
 
-        Text = "VoiceGuard — Stage 6.5.5";
+        Text = "VoiceGuard — Stage 6.6.2";
         Width = 1180;
         Height = 720;
         MinimumSize = new Size(1000, 620);
@@ -208,7 +211,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // ptt
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // mode
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); // branding
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
         main.Controls.Add(left, 0, 0);
 
         var inputLabel = MakeFieldLabel("Input");
@@ -287,18 +290,32 @@ public sealed class MainForm : Form
         status.Margin = new Padding(0);
         left.Controls.Add(status, 0, 10);
 
-        var jackBrand = new Label
+        var jackBrand = new PictureBox
         {
-            Text = "Jack The Gooner",
             Dock = DockStyle.Fill,
-            AutoSize = false,
-            TextAlign = ContentAlignment.BottomLeft,
-            Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(190, 120, 255),
+            SizeMode = PictureBoxSizeMode.Zoom,
             BackColor = Color.Transparent,
-            Padding = new Padding(0, 0, 0, 4),
-            Margin = new Padding(0)
+            Margin = new Padding(0, 4, 0, 4),
+            // Keep the branding compact while preserving the existing row size.
+            // Keep the branding noticeably smaller so it does not dominate the controls.
+            Padding = new Padding(53, 14, 53, 14)
         };
+
+        var brandPath = Path.Combine(AppContext.BaseDirectory, "JackTheGooner_Purple.png");
+        if (File.Exists(brandPath))
+        {
+            try
+            {
+                using var stream = File.OpenRead(brandPath);
+                using var sourceImage = Image.FromStream(stream);
+                jackBrand.Image = new Bitmap(sourceImage);
+            }
+            catch
+            {
+                // Branding is optional; the rest of VoiceGuard must still load.
+            }
+        }
+
         left.Controls.Add(jackBrand, 0, 11);
 
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
@@ -394,6 +411,7 @@ public sealed class MainForm : Form
         wordsMenu.Items.Add("Manage aliases...", null, (_, _) => ManageAliasesForSelectedWord());
         wordsMenu.Items.Add("Set replacement sound...", null, (_, _) => SetReplacementSoundForSelectedWord());
         wordsMenu.Items.Add("Clear replacement sound", null, (_, _) => ClearReplacementSoundForSelectedWord());
+        wordsMenu.Items.Add("Replacement playback...", null, (_, _) => ConfigureReplacementPlaybackForSelectedWord());
         wordsMenu.Items.Add(new ToolStripSeparator());
         wordsMenu.Items.Add("Remove word", null, (_, _) => RemoveBlockedWord());
         words.ContextMenuStrip = wordsMenu;
@@ -611,6 +629,7 @@ public sealed class MainForm : Form
             words.Items.Clear();
             blockedWordAliases.Clear();
             replacementSounds.Clear();
+            replacementPlaybackSettings.Clear();
 
             foreach (var word in config.BlockedWords
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -647,6 +666,20 @@ public sealed class MainForm : Form
                     !string.IsNullOrWhiteSpace(pair.Value))
                 {
                     replacementSounds[actualWord] = pair.Value;
+                }
+            }
+
+            foreach (var pair in config.ReplacementPlayback ?? new Dictionary<string, ReplacementPlaybackSettings>())
+            {
+                var actualWord = words.Items.Cast<object>()
+                    .Select(x => x?.ToString() ?? "")
+                    .FirstOrDefault(x => string.Equals(x, pair.Key, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(actualWord))
+                {
+                    var value = pair.Value;
+                    replacementPlaybackSettings[actualWord] = new ReplacementPlaybackSettings(
+                        value.MatchWordLength,
+                        Math.Clamp(value.DurationSeconds, 0.1, 5.0));
                 }
             }
 
@@ -690,6 +723,10 @@ public sealed class MainForm : Form
                     pair => pair.Value.ToList(),
                     StringComparer.OrdinalIgnoreCase),
                 ReplacementSounds = replacementSounds.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value,
+                    StringComparer.OrdinalIgnoreCase),
+                ReplacementPlayback = replacementPlaybackSettings.ToDictionary(
                     pair => pair.Key,
                     pair => pair.Value,
                     StringComparer.OrdinalIgnoreCase),
@@ -764,7 +801,11 @@ public sealed class MainForm : Form
             string value = words.Items[e.Index]?.ToString() ?? "";
             string displayValue = value;
             if (replacementSounds.TryGetValue(value, out var sound) && !string.IsNullOrWhiteSpace(sound))
+            {
                 displayValue += "  [SOUND: " + System.IO.Path.GetFileName(sound) + "]";
+                if (replacementPlaybackSettings.TryGetValue(value, out var playback))
+                    displayValue += playback.MatchWordLength ? "  [AUTO]" : $"  [{playback.DurationSeconds:0.0}s]";
+            }
 
             var outer = new Rectangle(
                 e.Bounds.Left + 4,
@@ -844,6 +885,7 @@ public sealed class MainForm : Form
             words.Items.RemoveAt(words.SelectedIndex);
             blockedWordAliases.Remove(word);
             replacementSounds.Remove(word);
+            replacementPlaybackSettings.Remove(word);
             SyncAliasesToDetector();
             words.Invalidate();
             SavePersistence();
@@ -904,6 +946,87 @@ public sealed class MainForm : Form
         return replacementSounds.TryGetValue(word, out var path) && !string.IsNullOrWhiteSpace(path)
             ? path
             : null;
+    }
+
+    private ReplacementPlaybackSettings GetReplacementPlaybackSettings(string word)
+    {
+        return replacementPlaybackSettings.TryGetValue(word, out var settings)
+            ? settings
+            : new ReplacementPlaybackSettings(true, 1.0);
+    }
+
+    private void ConfigureReplacementPlaybackForSelectedWord()
+    {
+        if (words.SelectedItem is null) return;
+        string word = words.SelectedItem.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(word)) return;
+
+        var current = GetReplacementPlaybackSettings(word);
+
+        using var dialog = new Form
+        {
+            Text = $"Replacement playback — {word}",
+            Width = 390,
+            Height = 205,
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = Bg,
+            ForeColor = TextMain,
+            Font = Font
+        };
+
+        var match = new CheckBox
+        {
+            Text = "Limit playback to detected word length",
+            Checked = current.MatchWordLength,
+            AutoSize = true,
+            Location = new Point(18, 18),
+            ForeColor = TextMain,
+            BackColor = Color.Transparent
+        };
+
+        var label = new Label
+        {
+            Text = "Custom playback length (0.1–5.0 seconds):",
+            AutoSize = true,
+            Location = new Point(18, 58),
+            ForeColor = TextDim
+        };
+
+        var duration = new NumericUpDown
+        {
+            Minimum = 0.1M,
+            Maximum = 5.0M,
+            Increment = 0.1M,
+            DecimalPlaces = 1,
+            Value = (decimal)Math.Clamp(current.DurationSeconds, 0.1, 5.0),
+            Location = new Point(21, 82),
+            Width = 90,
+            BackColor = Surface2,
+            ForeColor = TextMain
+        };
+        duration.Enabled = !match.Checked;
+        match.CheckedChanged += (_, _) => duration.Enabled = !match.Checked;
+
+        var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, Width = 90, Height = 30, Location = new Point(185, 120) };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 90, Height = 30, Location = new Point(283, 120) };
+        dialog.Controls.AddRange(new Control[] { match, label, duration, ok, cancel });
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        replacementPlaybackSettings[word] = new ReplacementPlaybackSettings(
+            match.Checked,
+            Math.Clamp((double)duration.Value, 0.1, 5.0));
+        words.Invalidate();
+        SavePersistence();
+        AddLog(match.Checked
+            ? $"REPLACEMENT PLAYBACK: {word} — detected word length"
+            : $"REPLACEMENT PLAYBACK: {word} — {duration.Value:0.0}s");
     }
 
     private void AddAliasToSelectedWord()
@@ -1153,7 +1276,8 @@ public sealed class MainForm : Form
                 () => detector.CompletedThroughSeconds,
                 () => detector.HasPendingAnalysis,
                 () => detector.AnalysisSafeThroughSeconds,
-                GetReplacementSound);
+                GetReplacementSound,
+                GetReplacementPlaybackSettings);
 
             detector.SetOutputCursorProvider(() => newEngine.CurrentSourceSeconds);
 
@@ -1163,7 +1287,7 @@ public sealed class MainForm : Form
                     AddLog($"CENSOR CALLBACK RECEIVED — {word} {startSeconds:0.000}s→{endSeconds:0.000}s");
                     try
                     {
-                        newEngine.AddCensorRegion(startSeconds, endSeconds, word, GetReplacementSound(word));
+                        newEngine.AddCensorRegion(startSeconds, endSeconds, word, GetReplacementSound(word), GetReplacementPlaybackSettings(word));
                     }
                     catch (ObjectDisposedException)
                     {

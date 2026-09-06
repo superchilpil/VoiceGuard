@@ -6,6 +6,8 @@ using System.IO;
 
 namespace VoiceGuard;
 
+public readonly record struct ReplacementPlaybackSettings(bool MatchWordLength, double DurationSeconds);
+
 public sealed class AudioEngine : IDisposable
 {
     private readonly int inputDevice;
@@ -20,6 +22,7 @@ public sealed class AudioEngine : IDisposable
     private readonly Func<bool>? analysisHasPending;
     private readonly Func<double>? analysisSafeThroughSeconds;
     private readonly Func<string, string?>? replacementSoundResolver;
+    private readonly Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver;
 
     private WaveInEvent? capture;
     private WaveOutEvent? output;
@@ -30,7 +33,6 @@ public sealed class AudioEngine : IDisposable
     private readonly object stateLock = new();
     private readonly object censorLock = new();
     private readonly List<CensorRegion> censorRegions = new();
-    private double delayedReadSeconds;
     private bool ptt;
     private bool delayedMode;
     private bool draining;
@@ -51,7 +53,8 @@ public sealed class AudioEngine : IDisposable
         Action<byte[], int, double> analysisAudio, Action<string>? logCallback = null,
         Action<double>? analysisSegmentStart = null, Action<double>? analysisSegmentEnd = null,
         Func<double>? analysisCompletedSeconds = null, Func<bool>? analysisHasPending = null,
-        Func<double>? analysisSafeThroughSeconds = null, Func<string, string?>? replacementSoundResolver = null)
+        Func<double>? analysisSafeThroughSeconds = null, Func<string, string?>? replacementSoundResolver = null,
+        Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver = null)
     {
         this.inputDevice = inputDevice; this.outputDevice = outputDevice; this.delaySeconds = delaySeconds;
         this.status = status; this.analysisAudio = analysisAudio;
@@ -59,10 +62,11 @@ public sealed class AudioEngine : IDisposable
         this.analysisCompletedSeconds = analysisCompletedSeconds; this.analysisHasPending = analysisHasPending;
         this.analysisSafeThroughSeconds = analysisSafeThroughSeconds;
         this.replacementSoundResolver = replacementSoundResolver;
+        this.replacementPlaybackResolver = replacementPlaybackResolver;
         this.log = logCallback ?? (_ => { });
     }
 
-    public double CurrentSourceSeconds => switcher?.CurrentSourceSeconds ?? delayedReadSeconds;
+    public double CurrentSourceSeconds => switcher?.CurrentSourceSeconds ?? 0.0;
 
     public void Start()
     {
@@ -89,7 +93,7 @@ public sealed class AudioEngine : IDisposable
         drainTargetSeconds = 0;
 
         switcher = new SwitchProvider(
-            format, delayed, live, FinishDrain, GetState, () => delaySeconds, () => capturePcmSeconds, () => drainTargetSeconds,
+            format, delayed, live, FinishDrain, GetState, () => delaySeconds, () => capturePcmSeconds, () => drainTargetSeconds, GetReplacementDrainTargetSeconds,
             IsCensored, GetCensorRegions, GetCensorRegion, status, log);
 
         output = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 80, NumberOfBuffers = 3 };
@@ -140,7 +144,7 @@ public sealed class AudioEngine : IDisposable
         }
     }
 
-    public void AddCensorRegion(double startSeconds, double endSeconds, string word, string? replacementSoundPath = null)
+    public void AddCensorRegion(double startSeconds, double endSeconds, string word, string? replacementSoundPath = null, ReplacementPlaybackSettings? playbackSettings = null)
     {
         if (endSeconds <= startSeconds) return;
         lock (censorLock)
@@ -152,10 +156,11 @@ public sealed class AudioEngine : IDisposable
             const double censorPostRollSeconds = 0.300;
 
             double coreStart = Math.Max(0, startSeconds);
+            double coreEnd = Math.Max(coreStart, endSeconds);
             startSeconds = Math.Max(0, startSeconds - censorPreRollSeconds);
             endSeconds += censorPostRollSeconds;
 
-            double outputCursor = switcher?.CurrentSourceSeconds ?? delayedReadSeconds;
+            double outputCursor = switcher?.CurrentSourceSeconds ?? 0.0;
             if (endSeconds <= outputCursor)
             {
                 log($"CENSOR MISSED — {word} {startSeconds:0.000}s→{endSeconds:0.000}s already passed (outputCursor={outputCursor:0.000}s).");
@@ -168,7 +173,12 @@ public sealed class AudioEngine : IDisposable
             // safety envelopes would turn several events into one long effect.
             if (!string.IsNullOrWhiteSpace(replacementSoundPath))
             {
-                censorRegions.Add(new CensorRegion(start, end, coreStart, word, replacementSoundPath));
+                var settings = playbackSettings ?? new ReplacementPlaybackSettings(true, 1.0);
+                double duration = settings.MatchWordLength
+                    ? Math.Max(0.0, coreEnd - coreStart)
+                    : Math.Clamp(settings.DurationSeconds, 0.1, MaxReplacementDurationSeconds);
+                double replacementEnd = coreStart + duration;
+                censorRegions.Add(new CensorRegion(start, end, coreStart, replacementEnd, word, replacementSoundPath));
             }
             else
             {
@@ -182,7 +192,7 @@ public sealed class AudioEngine : IDisposable
                     end = Math.Max(end, r.EndSeconds);
                     censorRegions.Remove(r);
                 }
-                censorRegions.Add(new CensorRegion(start, end, coreStart, word, null));
+                censorRegions.Add(new CensorRegion(start, end, coreStart, coreStart, word, null));
             }
             censorRegions.Sort((a,b) => a.StartSeconds.CompareTo(b.StartSeconds));
             log($"CENSOR SCHEDULED — {word} PCM={start:0.000}s→{end:0.000}s | outputCursor={outputCursor:0.000}s" +
@@ -193,15 +203,15 @@ public sealed class AudioEngine : IDisposable
 
     private CensorRegion? GetCensorRegion(double sourceSeconds)
     {
-        lock (censorLock) return censorRegions.FirstOrDefault(r => sourceSeconds >= r.StartSeconds && sourceSeconds < r.EndSeconds);
+        lock (censorLock) return censorRegions.FirstOrDefault(r => sourceSeconds >= r.StartSeconds && sourceSeconds < Math.Max(r.EndSeconds, r.ReplacementEndSeconds));
     }
     private List<CensorRegion> GetCensorRegions(double startSeconds, double endSeconds)
     {
-        lock (censorLock) return censorRegions.Where(r => r.EndSeconds > startSeconds && r.StartSeconds < endSeconds).OrderBy(r=>r.StartSeconds).ToList();
+        lock (censorLock) return censorRegions.Where(r => Math.Max(r.EndSeconds, r.ReplacementEndSeconds) > startSeconds && r.StartSeconds < endSeconds).OrderBy(r=>r.StartSeconds).ToList();
     }
     private bool IsCensored(double sourceSeconds)
     {
-        lock (censorLock) return censorRegions.Any(r => sourceSeconds >= r.StartSeconds && sourceSeconds < r.EndSeconds);
+        lock (censorLock) return censorRegions.Any(r => sourceSeconds >= r.StartSeconds && sourceSeconds < Math.Max(r.EndSeconds, r.ReplacementEndSeconds));
     }
 
     public void SetPtt(bool down)
@@ -245,6 +255,16 @@ public sealed class AudioEngine : IDisposable
                 delayedMode = true;
                 drainTargetSeconds = capturePcmSeconds;
 
+                // Keep enough silent PCM queued after PTT release for a custom
+                // replacement sound to finish even when it extends past the
+                // captured speech. The actual drain target remains dynamic and
+                // only extends when a replacement event requires it.
+                int replacementTailBytes = (int)Math.Round(
+                    MaxReplacementDurationSeconds * BytesPerSecond);
+                replacementTailBytes -= replacementTailBytes % 2;
+                if (replacementTailBytes > 0)
+                    delayed?.AddSamples(new byte[replacementTailBytes], 0, replacementTailBytes);
+
                 analysisSegmentEnd?.Invoke(capturePcmSeconds);
                 log($"PTT UP — key=Z | source={capturePcmSeconds:0.000}s");
                 status("PTT RELEASED — finishing delayed filtered audio...");
@@ -255,6 +275,16 @@ public sealed class AudioEngine : IDisposable
     private (bool delayedMode, bool ptt, bool draining) GetState()
     {
         lock (stateLock) return (delayedMode, ptt, draining);
+    }
+
+    private double GetReplacementDrainTargetSeconds()
+    {
+        lock (censorLock)
+        {
+            return censorRegions.Count == 0
+                ? 0.0
+                : censorRegions.Max(r => r.ReplacementEndSeconds);
+        }
     }
 
     private void FinishDrain()
@@ -294,11 +324,12 @@ public sealed class AudioEngine : IDisposable
         public double StartSeconds {get;}
         public double EndSeconds {get;}
         public double EffectStartSeconds {get;}
+        public double ReplacementEndSeconds {get;}
         public string Word {get;}
         public string? ReplacementSoundPath {get;}
-        public CensorRegion(double start, double end, double effectStart, string word, string? sound)
+        public CensorRegion(double start, double end, double effectStart, double replacementEnd, string word, string? sound)
         {
-            StartSeconds=start; EndSeconds=end; EffectStartSeconds=effectStart; Word=word; ReplacementSoundPath=sound;
+            StartSeconds=start; EndSeconds=end; EffectStartSeconds=effectStart; ReplacementEndSeconds=replacementEnd; Word=word; ReplacementSoundPath=sound;
         }
     }
 
@@ -312,6 +343,7 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<double> delay;
         private readonly Func<double> captureSeconds;
         private readonly Func<double> getDrainTargetSeconds;
+        private readonly Func<double> getReplacementDrainTargetSeconds;
         private readonly Func<double,bool> isCensored;
         private readonly Func<double,double,List<CensorRegion>> getCensorRegions;
         private readonly Func<double,CensorRegion?> getCensorRegion;
@@ -322,11 +354,11 @@ public sealed class AudioEngine : IDisposable
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
 
         public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, BufferedWaveProvider live,
-            Action finishDrain, Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds, Func<double> getDrainTargetSeconds,
+            Action finishDrain, Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds, Func<double> getDrainTargetSeconds, Func<double> getReplacementDrainTargetSeconds,
             Func<double,bool> isCensored, Func<double,double,List<CensorRegion>> getCensorRegions,
             Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log)
         {
-            this.format=format; this.delayed=delayed; this.live=live; this.finishDrain=finishDrain; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds; this.getDrainTargetSeconds=getDrainTargetSeconds;
+            this.format=format; this.delayed=delayed; this.live=live; this.finishDrain=finishDrain; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds; this.getDrainTargetSeconds=getDrainTargetSeconds; this.getReplacementDrainTargetSeconds=getReplacementDrainTargetSeconds;
             this.isCensored=isCensored; this.getCensorRegions=getCensorRegions; this.getCensorRegion=getCensorRegion;
             this.censorStatus=censorStatus; this.log=log;
         }
@@ -349,7 +381,7 @@ public sealed class AudioEngine : IDisposable
             }
 
             double safeSource = s.draining
-                ? getDrainTargetSeconds()
+                ? Math.Max(getDrainTargetSeconds(), getReplacementDrainTargetSeconds())
                 : Math.Max(0, captureSeconds() - delay());
 
             if(sourceReadSeconds>=safeSource)
@@ -401,7 +433,9 @@ public sealed class AudioEngine : IDisposable
                 if(pcm.Length==0) continue;
 
                 double effectStart=Math.Max(start,region.EffectStartSeconds);
-                double effectEnd=Math.Min(end,region.EffectStartSeconds + pcm.Length/(double)format.AverageBytesPerSecond);
+                double effectEnd=Math.Min(end, Math.Min(
+                    region.ReplacementEndSeconds,
+                    region.EffectStartSeconds + pcm.Length/(double)format.AverageBytesPerSecond));
                 if(effectEnd<=effectStart) continue;
 
                 int relStart=(int)Math.Floor((effectStart-start)*format.AverageBytesPerSecond);

@@ -15,7 +15,7 @@ internal static class Program
         // Give Windows a NEW, stable identity for this revision. This prevents
         // the shell/taskbar from treating the application as the old pinned
         // VoiceGuard executable and reusing its cached icon.
-        _ = SetCurrentProcessExplicitAppUserModelID("JackTheGooner.VoiceGuard.6.6.1.1");
+        _ = SetCurrentProcessExplicitAppUserModelID("JackTheGooner.VoiceGuard.6.6.2");
 
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
