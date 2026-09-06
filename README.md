@@ -1,6 +1,16 @@
 # VoiceGuard
 
-VoiceGuard is a Windows voice-chat profanity filter that captures microphone audio, delays it for filtering, detects configured blocked words/phrases with local Whisper speech recognition, and mutes or replaces offending audio before sending the audio to the selected output device.
+VoiceGuard is a Windows voice-chat profanity filter designed primarily for **gaming and other voice-chat applications that use push-to-talk (PTT)**. It captures microphone audio, delays PTT speech for filtering, detects configured blocked words/phrases with local Whisper speech recognition, and mutes or replaces offending audio before sending the audio to the selected output device.
+
+## How VoiceGuard Works
+
+VoiceGuard has two audio paths depending on whether you are pressing your configured PTT key:
+
+- **PTT not pressed:** VoiceGuard uses **live audio passthrough**. Your microphone audio is sent directly to the selected output without the profanity filter or Whisper speech recognition being applied.
+- **PTT pressed:** VoiceGuard captures and delays your speech, analyzes it with Whisper, and filters detected blocked words before the delayed audio is sent to the selected output.
+- **PTT released:** VoiceGuard finishes draining the delayed PTT audio and then automatically returns to live passthrough.
+
+This design is intended for games where you normally communicate by holding a push-to-talk key. Audio that you are not intentionally transmitting through PTT is not filtered or transcribed by VoiceGuard.
 
 ## Requirements
 
@@ -10,7 +20,7 @@ VoiceGuard is a Windows voice-chat profanity filter that captures microphone aud
 - **VB-Audio Virtual Cable (VB-CABLE)**
 - Intel NPU support is optional; compatible Intel systems can use OpenVINO NPU acceleration for Whisper
 
-VoiceGuard is designed to route its filtered audio through VB-CABLE.
+VoiceGuard is designed to route its audio through VB-CABLE.
 
 Download VB-CABLE from the official VB-Audio page:
 https://vb-audio.com/Cable/
@@ -25,22 +35,25 @@ The latest Windows installer is available from the repository's GitHub Releases 
 2. Install VB-CABLE if you have not already done so.
 3. Select your microphone under **Input Device**.
 4. Select **CABLE Input** / the VB-CABLE playback side as the VoiceGuard output device.
-5. Configure your voice-chat application to use **CABLE Output** / the VB-CABLE recording side as its microphone input.
+5. Configure your game or voice-chat application to use **CABLE Output** / the VB-CABLE recording side as its microphone input.
 6. Add the words or phrases you want VoiceGuard to block.
-7. Hold the configured push-to-talk key while speaking. VoiceGuard processes the captured audio through the configured delay and filters detected blocked words before sending the audio to VB-CABLE.
-8. Release the push-to-talk key when finished speaking.
+7. Configure your preferred push-to-talk key in VoiceGuard.
+8. **Hold the push-to-talk key when you want to transmit.** VoiceGuard delays that audio long enough for Whisper to recognize speech and filters detected blocked words before sending the audio to VB-CABLE.
+9. **When PTT is not pressed, VoiceGuard passes microphone audio through live without filtering or Whisper transcription.**
+10. Release the push-to-talk key when finished speaking. VoiceGuard drains the remaining delayed audio and then returns to live passthrough.
 
 ### Delay
 
-VoiceGuard uses a short audio delay so Whisper has time to transcribe speech and detect blocked words before the audio reaches the output.
+VoiceGuard uses a short audio delay during PTT transmission so Whisper has time to transcribe speech and detect blocked words before the audio reaches the output.
 
 - **2.0 seconds is the minimum delay** supported by VoiceGuard and is intended for higher-end machines that can process Whisper quickly enough.
 - If VoiceGuard is **missing words or frequently showing `MISSED` entries** in the log, increase the delay to give Whisper more time to recognize the speech before it reaches the output.
 - Increasing the delay can improve filtering reliability, especially on slower systems or when processing more difficult audio.
+- The delay applies to the **PTT transmission path**; microphone audio while PTT is idle remains live passthrough.
 
 ### Blocked Words
 
-The **Blocked Words** list contains the words and phrases VoiceGuard will look for in Whisper's transcription.
+The **Blocked Words** list contains the words and phrases VoiceGuard will look for in Whisper's transcription while PTT is active.
 
 To add a blocked word or phrase:
 
@@ -52,7 +65,7 @@ To remove one, select it and click **Remove**.
 
 ## Replacement Sound Effects
 
-VoiceGuard can replace a detected blocked word with a WAV sound effect instead of simply muting that portion of audio.
+VoiceGuard can replace a detected blocked word with a WAV sound effect instead of simply muting that portion of PTT audio.
 
 To assign a sound effect:
 
@@ -69,8 +82,6 @@ To remove a replacement sound assignment, use the same right-click menu for the 
 ## Transcription Aliases
 
 An **alias** tells VoiceGuard to treat a phrase that Whisper commonly transcribes incorrectly as a different blocked word or phrase.
-
-For example, if Whisper frequently hears a blocked word as a similar-sounding phrase, you can create an alias so that VoiceGuard interprets that transcription as the intended blocked word.
 
 To add an alias:
 
@@ -91,25 +102,29 @@ Aliases are useful when pronunciation, background noise, microphone quality, or 
 
 ## Intel NPU / OpenVINO Acceleration
 
-**VoiceGuard 6.6** adds optional Intel OpenVINO NPU acceleration for Whisper speech recognition.
+**VoiceGuard 6.6** adds optional Intel OpenVINO NPU acceleration for Whisper speech recognition during PTT processing.
 
 - Compatible Intel systems can use the **Intel NPU** for Whisper's OpenVINO encoder.
 - VoiceGuard automatically attempts the NPU path when the required Intel/OpenVINO runtime is available.
 - Systems without compatible NPU support continue to use the CPU Whisper runtime.
 - NPU acceleration is isolated to Whisper initialization and does not change VoiceGuard's audio routing, PTT, delay, or censor scheduling pipeline.
 - The startup log reports whether OpenVINO is selected and whether the NPU encoder was requested.
+- NPU acceleration only matters while VoiceGuard is analyzing PTT speech; idle live passthrough does not run Whisper.
 
 The NPU path is optional. VoiceGuard remains usable on systems that do not have a compatible Intel NPU.
 
 ## Features
 
+- Designed for gaming and PTT-based voice chat
+- Live microphone passthrough when PTT is not pressed
+- Delayed and filtered audio while PTT is pressed
 - Local Whisper speech recognition
 - Optional Intel OpenVINO/NPU Whisper acceleration
 - CPU Whisper fallback
 - Configurable blocked words and phrases
 - Transcription aliases
 - Per-word replacement sound effects
-- Adjustable delayed filtering
+- Adjustable PTT filtering delay
 - Push-to-talk support
 - Input/output device selection
 - Persistent settings stored in the user's local application data
@@ -133,14 +148,16 @@ The application downloads/loads its configured local Whisper model there.
 
 ## Audio Routing
 
-A typical setup is:
+A typical gaming setup is:
 
     Microphone
         -> VoiceGuard
         -> VB-CABLE
-        -> Voice chat application
+        -> Game / voice-chat application
 
-Configure the voice-chat application to use the VB-CABLE recording/input side as its microphone source.
+Configure the game or voice-chat application to use the VB-CABLE recording/input side as its microphone source.
+
+VoiceGuard is intended to sit between your microphone and the game's voice input. When PTT is idle, VoiceGuard passes the microphone audio through live. When you press PTT, the transmitted audio enters VoiceGuard's delayed filtering path.
 
 Personally I use VoiceMeeter Banana in conjunction with this to switch from direct Mic input and VG depending on the game to conserve resources
 
