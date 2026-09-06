@@ -575,7 +575,7 @@ public sealed class SpeechDetector : IAsyncDisposable
         // Adaptive threshold: prevents normal microphone noise from being
         // treated as speech while still handling different mic gain levels.
         double average = sumEnergy / frames;
-        double threshold = Math.Max(0.012, Math.Max(average * 2.2, peak * 0.16));
+        double threshold = Math.Max(0.009, Math.Max(average * 1.9, peak * 0.13));
 
         for (int i = 0; i < frameEnergy.Length; i++)
         {
@@ -588,8 +588,8 @@ public sealed class SpeechDetector : IAsyncDisposable
         // A 1-second window needs meaningful speech activity, not one isolated
         // noise spike. These values are deliberately conservative.
         bool isSpeech =
-            peak >= 0.025 &&
-            activity >= 0.12;
+            peak >= 0.018 &&
+            activity >= 0.08;
 
         return new VadResult(isSpeech, activity, peak);
     }
