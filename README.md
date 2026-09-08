@@ -142,9 +142,12 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - Replacement audio conversion to WAV/PCM
 - 5-second maximum replacement-audio limit
 - Adjustable PTT filtering delay
+- Global Start/Stop hotkey
+- Optional minimize-to-system-tray support
+- Optional start with Windows
+- Single-instance protection to prevent multiple VoiceGuard audio engines from running at once
 - Input/output device selection
 - Persistent settings stored in the user's local application data
-- Single-instance protection to prevent multiple VoiceGuard audio engines from running at once
 
 ## Building
 
