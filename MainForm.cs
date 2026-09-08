@@ -6,6 +6,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using System.Windows.Forms;
 
 namespace VoiceGuard;
@@ -40,13 +41,34 @@ public sealed class MainForm : Form
     private readonly Label mode = new();
     private readonly Label status = new();
     private readonly Button start = new();
+    private readonly CheckBox startWithWindows = new();
+    private readonly CheckBox minimizeToTray = new();
+    private readonly TextBox startStopHotkey = new();
+    private readonly NotifyIcon trayIcon = new();
+    private readonly ContextMenuStrip trayMenu = new();
 
     private AudioEngine? engine;
     private PttKeyHook? hook;
     private SpeechDetector? detector;
     private bool loadingPersistence;
+    private bool exitingApplication;
+    private bool launchedMinimized;
     private string? loadedInputDeviceName;
     private string? loadedOutputDeviceName;
+
+    private const int WM_HOTKEY = 0x0312;
+    private const int StartStopHotkeyId = 0x5647;
+    private const uint MOD_ALT = 0x0001;
+    private const uint MOD_CONTROL = 0x0002;
+    private const uint MOD_SHIFT = 0x0004;
+    private const uint MOD_WIN = 0x0008;
+    private const uint MOD_NOREPEAT = 0x4000;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
     // Keep both icon sizes alive for the lifetime of the window. Windows uses
     // the small icon for the taskbar and the large icon for the title bar / shell.
@@ -76,6 +98,9 @@ public sealed class MainForm : Form
         public string PttKey { get; set; } = Keys.Z.ToString();
         public string? InputDevice { get; set; }
         public string? OutputDevice { get; set; }
+        public bool StartWithWindows { get; set; }
+        public bool MinimizeToTray { get; set; }
+        public string StartStopHotkey { get; set; } = "Control, Alt, V";
     }
 
     private void ApplyWindowAndTaskbarIcon()
@@ -106,7 +131,7 @@ public sealed class MainForm : Form
     {
         ApplyWindowAndTaskbarIcon();
 
-        Text = "VoiceGuard — Stage 6.6.2";
+        Text = "VoiceGuard — Stage 6.6.3";
         Width = 1180;
         Height = 720;
         MinimumSize = new Size(1000, 620);
@@ -193,7 +218,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 12,
+            RowCount = 13,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -209,6 +234,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // settings heading
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // delay
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // ptt
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 82)); // startup/tray/hotkey
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // mode
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
@@ -272,6 +298,63 @@ public sealed class MainForm : Form
         pttPanel.Controls.Add(ptt);
         left.Controls.Add(pttPanel, 0, 8);
 
+        var startupPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = new Padding(0),
+            Padding = new Padding(0),
+            BackColor = Bg
+        };
+        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+
+        startWithWindows.Text = "Start with Windows";
+        startWithWindows.AutoSize = true;
+        startWithWindows.ForeColor = TextMain;
+        startWithWindows.BackColor = Bg;
+        startWithWindows.Margin = new Padding(0);
+        startWithWindows.CheckedChanged += (_, _) =>
+        {
+            if (!loadingPersistence)
+            {
+                SetStartWithWindows(startWithWindows.Checked);
+                SavePersistence();
+            }
+        };
+        startupPanel.Controls.Add(startWithWindows, 0, 0);
+
+        minimizeToTray.Text = "Minimize to system tray";
+        minimizeToTray.AutoSize = true;
+        minimizeToTray.ForeColor = TextMain;
+        minimizeToTray.BackColor = Bg;
+        minimizeToTray.Margin = new Padding(0);
+        minimizeToTray.CheckedChanged += (_, _) =>
+        {
+            if (!loadingPersistence)
+                SavePersistence();
+        };
+        startupPanel.Controls.Add(minimizeToTray, 0, 1);
+
+        var hotkeyPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var hotkeyLabel = MakeFieldLabel("Start/Stop hotkey");
+        hotkeyLabel.Width = 120;
+        hotkeyPanel.Controls.Add(hotkeyLabel);
+        startStopHotkey.Dock = DockStyle.Right;
+        startStopHotkey.Width = 160;
+        startStopHotkey.ReadOnly = true;
+        startStopHotkey.Text = "Ctrl + Alt + V";
+        startStopHotkey.Tag = Keys.Control | Keys.Alt | Keys.V;
+        StyleInput(startStopHotkey);
+        startStopHotkey.TextAlign = HorizontalAlignment.Center;
+        startStopHotkey.KeyDown += StartStopHotkey_KeyDown;
+        hotkeyPanel.Controls.Add(startStopHotkey);
+        startupPanel.Controls.Add(hotkeyPanel, 0, 2);
+
+        left.Controls.Add(startupPanel, 0, 9);
+
         // A compact status area lives below the fixed controls if there is
         // room; it does not participate in the three primary control order.
         status.Text = "Whisper loads automatically when VoiceGuard starts.";
@@ -285,10 +368,10 @@ public sealed class MainForm : Form
         mode.Dock = DockStyle.Fill;
         mode.Height = 30;
         mode.Margin = new Padding(0);
-        left.Controls.Add(mode, 0, 9);
+        left.Controls.Add(mode, 0, 10);
         status.Dock = DockStyle.Fill;
         status.Margin = new Padding(0);
-        left.Controls.Add(status, 0, 10);
+        left.Controls.Add(status, 0, 11);
 
         var jackBrand = new PictureBox
         {
@@ -316,7 +399,7 @@ public sealed class MainForm : Form
             }
         }
 
-        left.Controls.Add(jackBrand, 0, 11);
+        left.Controls.Add(jackBrand, 0, 12);
 
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
@@ -471,15 +554,21 @@ public sealed class MainForm : Form
         input.SelectedIndexChanged += (_, _) => SavePersistence();
         output.SelectedIndexChanged += (_, _) => SavePersistence();
 
+        InitializeTrayIcon();
+        FormClosing += MainForm_FormClosing;
+        SizeChanged += (_, _) =>
+        {
+            if (WindowState == FormWindowState.Minimized && minimizeToTray.Checked)
+                HideToTray();
+        };
         Load += (_, _) =>
         {
             LoadPersistence();
             LoadDevices();
-        };
-        FormClosing += (_, _) =>
-        {
-            SavePersistence();
-            StopEngine();
+            ApplyStartWithWindowsSetting();
+            RegisterStartStopHotkey();
+            if (launchedMinimized && minimizeToTray.Checked)
+                BeginInvoke(HideToTray);
         };
     }
 
@@ -617,14 +706,21 @@ public sealed class MainForm : Form
         try
         {
             if (!File.Exists(ConfigPath))
+            {
+                loadingPersistence = false;
+                ApplyStartWithWindowsSetting();
                 return;
+            }
 
             var json = File.ReadAllText(ConfigPath);
             var config = JsonSerializer.Deserialize<VoiceGuardConfig>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             if (config == null)
+            {
+                loadingPersistence = false;
                 return;
+            }
 
             words.Items.Clear();
             blockedWordAliases.Clear();
@@ -695,6 +791,16 @@ public sealed class MainForm : Form
             loadedInputDeviceName = config.InputDevice;
             loadedOutputDeviceName = config.OutputDevice;
 
+            startWithWindows.Checked = config.StartWithWindows;
+            minimizeToTray.Checked = config.MinimizeToTray;
+            if (TryParseHotkey(config.StartStopHotkey, out var savedHotkey))
+            {
+                startStopHotkey.Tag = savedHotkey;
+                startStopHotkey.Text = FormatHotkey(savedHotkey);
+            }
+            launchedMinimized = Environment.GetCommandLineArgs()
+                .Any(a => string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase));
+
             if (words.Items.Count > 0)
                 words.SelectedIndex = 0;
 
@@ -733,7 +839,10 @@ public sealed class MainForm : Form
                 DelaySeconds = delay.Value,
                 PttKey = (ptt.Tag is Keys key ? key : Keys.Z).ToString(),
                 InputDevice = input.SelectedItem is AudioDeviceInfo inputDevice ? inputDevice.Name : null,
-                OutputDevice = output.SelectedItem is AudioDeviceInfo outputDevice ? outputDevice.Name : null
+                OutputDevice = output.SelectedItem is AudioDeviceInfo outputDevice ? outputDevice.Name : null,
+                StartWithWindows = startWithWindows.Checked,
+                MinimizeToTray = minimizeToTray.Checked,
+                StartStopHotkey = FormatHotkeyForConfig(startStopHotkey.Tag is Keys startStopKey ? startStopKey : Keys.Control | Keys.Alt | Keys.V)
             };
 
             var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
@@ -749,6 +858,220 @@ public sealed class MainForm : Form
         {
             AddLog($"CONFIG SAVE ERROR — {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+
+    private void InitializeTrayIcon()
+    {
+        trayMenu.Items.Clear();
+
+        var showItem = trayMenu.Items.Add("Show VoiceGuard");
+        showItem.Click += (_, _) => RestoreFromTray();
+
+        var toggleItem = trayMenu.Items.Add("Start / Stop VoiceGuard");
+        toggleItem.Click += async (_, _) => await ToggleEngineAsync();
+
+        trayMenu.Items.Add(new ToolStripSeparator());
+
+        var exitItem = trayMenu.Items.Add("Exit VoiceGuard");
+        exitItem.Click += (_, _) =>
+        {
+            exitingApplication = true;
+            trayIcon.Visible = false;
+            Close();
+        };
+
+        trayIcon.ContextMenuStrip = trayMenu;
+        trayIcon.Text = "VoiceGuard";
+        trayIcon.Icon = taskbarSmallIcon ?? SystemIcons.Application;
+        trayIcon.Visible = true;
+        trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private void HideToTray()
+    {
+        if (!minimizeToTray.Checked)
+            return;
+
+        Hide();
+        WindowState = FormWindowState.Minimized;
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+        BringToFront();
+    }
+
+    private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (!exitingApplication && minimizeToTray.Checked)
+        {
+            e.Cancel = true;
+            HideToTray();
+            return;
+        }
+
+        UnregisterStartStopHotkey();
+        trayIcon.Visible = false;
+        trayIcon.Dispose();
+        SavePersistence();
+        StopEngine();
+    }
+
+    private void SetStartWithWindows(bool enabled)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Run");
+            if (key == null)
+                return;
+
+            const string valueName = "VoiceGuard";
+            if (enabled)
+            {
+                string args = minimizeToTray.Checked ? " --minimized" : "";
+                key.SetValue(valueName, $"\"{Application.ExecutablePath}\"{args}");
+            }
+            else
+            {
+                key.DeleteValue(valueName, false);
+            }
+        }
+        catch (Exception ex)
+        {
+            AddLog($"STARTUP ERROR: {ex.Message}");
+        }
+    }
+
+    private void ApplyStartWithWindowsSetting()
+    {
+        SetStartWithWindows(startWithWindows.Checked);
+    }
+
+    private static uint GetHotkeyModifiers(Keys keyData)
+    {
+        uint modifiers = 0;
+        if ((keyData & Keys.Control) == Keys.Control) modifiers |= MOD_CONTROL;
+        if ((keyData & Keys.Alt) == Keys.Alt) modifiers |= MOD_ALT;
+        if ((keyData & Keys.Shift) == Keys.Shift) modifiers |= MOD_SHIFT;
+        if ((keyData & Keys.LWin) == Keys.LWin || (keyData & Keys.RWin) == Keys.RWin)
+            modifiers |= MOD_WIN;
+        return modifiers;
+    }
+
+    private static Keys GetHotkeyKey(Keys keyData) => keyData & Keys.KeyCode;
+
+    private static string FormatHotkey(Keys keyData)
+    {
+        var parts = new List<string>();
+        if ((keyData & Keys.Control) == Keys.Control) parts.Add("Ctrl");
+        if ((keyData & Keys.Alt) == Keys.Alt) parts.Add("Alt");
+        if ((keyData & Keys.Shift) == Keys.Shift) parts.Add("Shift");
+        if ((keyData & Keys.LWin) == Keys.LWin || (keyData & Keys.RWin) == Keys.RWin) parts.Add("Win");
+
+        var key = GetHotkeyKey(keyData);
+        if (key != Keys.None && !key.ToString().Equals("ControlKey", StringComparison.OrdinalIgnoreCase)
+            && !key.ToString().Equals("Menu", StringComparison.OrdinalIgnoreCase)
+            && !key.ToString().Equals("ShiftKey", StringComparison.OrdinalIgnoreCase))
+            parts.Add(key.ToString());
+
+        return string.Join(" + ", parts);
+    }
+
+    private static string FormatHotkeyForConfig(Keys keyData)
+    {
+        var parts = new List<string>();
+        if ((keyData & Keys.Control) == Keys.Control) parts.Add("Control");
+        if ((keyData & Keys.Alt) == Keys.Alt) parts.Add("Alt");
+        if ((keyData & Keys.Shift) == Keys.Shift) parts.Add("Shift");
+        if ((keyData & Keys.LWin) == Keys.LWin || (keyData & Keys.RWin) == Keys.RWin) parts.Add("Win");
+        var key = GetHotkeyKey(keyData);
+        if (key != Keys.None) parts.Add(key.ToString());
+        return string.Join(", ", parts);
+    }
+
+    private static bool TryParseHotkey(string? value, out Keys hotkey)
+    {
+        hotkey = Keys.None;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (part.Equals("Control", StringComparison.OrdinalIgnoreCase) ||
+                part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase))
+                hotkey |= Keys.Control;
+            else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase))
+                hotkey |= Keys.Alt;
+            else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase))
+                hotkey |= Keys.Shift;
+            else if (part.Equals("Win", StringComparison.OrdinalIgnoreCase))
+                hotkey |= Keys.LWin;
+            else if (Enum.TryParse<Keys>(part, true, out var parsed) && parsed != Keys.None)
+                hotkey |= parsed & Keys.KeyCode;
+        }
+
+        return GetHotkeyKey(hotkey) != Keys.None;
+    }
+
+    private void StartStopHotkey_KeyDown(object? sender, KeyEventArgs e)
+    {
+        var key = e.KeyCode;
+        if (key == Keys.ControlKey || key == Keys.Menu || key == Keys.ShiftKey)
+            return;
+
+        Keys keyData = e.KeyData;
+        if (GetHotkeyKey(keyData) == Keys.None)
+            return;
+
+        startStopHotkey.Tag = keyData;
+        startStopHotkey.Text = FormatHotkey(keyData);
+        SavePersistence();
+        RegisterStartStopHotkey();
+        e.SuppressKeyPress = true;
+        e.Handled = true;
+    }
+
+    private void RegisterStartStopHotkey()
+    {
+        if (!IsHandleCreated)
+            return;
+
+        UnregisterStartStopHotkey();
+
+        var hotkey = startStopHotkey.Tag is Keys key
+            ? key
+            : Keys.Control | Keys.Alt | Keys.V;
+
+        var modifiers = GetHotkeyModifiers(hotkey) | MOD_NOREPEAT;
+        var keyCode = GetHotkeyKey(hotkey);
+        if (keyCode == Keys.None)
+            return;
+
+        if (!RegisterHotKey(Handle, StartStopHotkeyId, modifiers, (uint)keyCode))
+        {
+            AddLog("START/STOP HOTKEY: unable to register selected hotkey.");
+        }
+    }
+
+    private void UnregisterStartStopHotkey()
+    {
+        if (IsHandleCreated)
+            _ = UnregisterHotKey(Handle, StartStopHotkeyId);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == StartStopHotkeyId)
+        {
+            BeginInvoke(async () => await ToggleEngineAsync());
+        }
+
+        base.WndProc(ref m);
     }
 
     private async Task PrepareModelAsync()
