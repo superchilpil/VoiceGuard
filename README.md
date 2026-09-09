@@ -71,7 +71,7 @@ To remove one, select it and click **Remove**.
 
 ## Replacement Sound Effects
 
-VoiceGuard can replace a detected blocked word with a custom sound instead of muting it. Each blocked word can have its own replacement sound and playback duration.
+VoiceGuard can replace a detected blocked word with a custom sound instead of muting it. Each blocked word can have its own replacement sound, playback duration, and replacement volume.
 
 ### Assigning a Replacement Sound
 
@@ -91,6 +91,17 @@ Each blocked word has its own playback-duration setting. Right-click the word an
 The selected duration is saved separately for each blocked word. Replacement playback continues through the selected duration even if PTT is released, then VoiceGuard returns to live passthrough.
 
 Replacement audio is converted and prepared before real-time censor playback, so codec conversion is not performed during live PTT processing. Consecutive blocked words remain separate events, allowing each replacement to use its own sound and playback setting.
+
+### Replacement Volume
+
+Each blocked word can have its own replacement-sound volume from **0% to 150%**. This is useful when a replacement recording is quieter than the surrounding voice audio.
+
+- **100%** is the normal playback level.
+- Levels above 100% provide additional gain for quieter replacement sounds.
+- The replacement volume is configured independently for each blocked word.
+- Use the **Test** button beside a replacement volume control to preview the sound locally. Test playback uses the computer's normal Windows playback device and is **not sent through the selected VoiceGuard/VB-CABLE output**.
+
+VoiceGuard also provides a **master output volume control from 0% to 150%** directly below the selected output device. This controls the volume of audio sent through VoiceGuard's output path.
 
 To remove a replacement sound, use the word's right-click menu and choose the option to clear it.
 
@@ -138,9 +149,12 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - CPU Whisper fallback
 - Configurable blocked words and phrases
 - Transcription aliases
-- Per-word replacement sounds and playback-duration settings
+- Per-word replacement sounds, playback-duration settings, and volume controls
 - Replacement audio conversion to WAV/PCM
 - 5-second maximum replacement-audio limit
+- Per-word replacement volume up to 150%
+- Master output volume control up to 150%
+- Local replacement-sound Test playback
 - Adjustable PTT filtering delay
 - Global Start/Stop hotkey
 - Optional minimize-to-system-tray support
@@ -182,7 +196,7 @@ Personally I use VoiceMeeter Banana in conjunction with this to switch from dire
 
 ## Settings and Persistence
 
-VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, delay, push-to-talk key, and selected audio devices.
+VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, master output volume, delay, push-to-talk key, and selected audio devices.
 
 Settings are stored under:
 
