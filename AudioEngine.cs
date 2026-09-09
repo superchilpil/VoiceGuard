@@ -23,6 +23,8 @@ public sealed class AudioEngine : IDisposable
     private readonly Func<double>? analysisSafeThroughSeconds;
     private readonly Func<string, string?>? replacementSoundResolver;
     private readonly Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver;
+    private readonly Func<string, double>? replacementVolumeResolver;
+    private readonly Func<double>? outputVolumeResolver;
 
     private WaveInEvent? capture;
     private WaveOutEvent? output;
@@ -54,7 +56,9 @@ public sealed class AudioEngine : IDisposable
         Action<double>? analysisSegmentStart = null, Action<double>? analysisSegmentEnd = null,
         Func<double>? analysisCompletedSeconds = null, Func<bool>? analysisHasPending = null,
         Func<double>? analysisSafeThroughSeconds = null, Func<string, string?>? replacementSoundResolver = null,
-        Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver = null)
+        Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver = null,
+        Func<string, double>? replacementVolumeResolver = null,
+        Func<double>? outputVolumeResolver = null)
     {
         this.inputDevice = inputDevice; this.outputDevice = outputDevice; this.delaySeconds = delaySeconds;
         this.status = status; this.analysisAudio = analysisAudio;
@@ -63,10 +67,17 @@ public sealed class AudioEngine : IDisposable
         this.analysisSafeThroughSeconds = analysisSafeThroughSeconds;
         this.replacementSoundResolver = replacementSoundResolver;
         this.replacementPlaybackResolver = replacementPlaybackResolver;
+        this.replacementVolumeResolver = replacementVolumeResolver;
+        this.outputVolumeResolver = outputVolumeResolver;
         this.log = logCallback ?? (_ => { });
     }
 
     public double CurrentSourceSeconds => switcher?.CurrentSourceSeconds ?? 0.0;
+
+    public void SetOutputVolume(double volume)
+    {
+        switcher?.SetOutputVolume(volume);
+    }
 
     public void Start()
     {
@@ -94,7 +105,7 @@ public sealed class AudioEngine : IDisposable
 
         switcher = new SwitchProvider(
             format, delayed, live, FinishDrain, GetState, () => delaySeconds, () => capturePcmSeconds, () => drainTargetSeconds, GetReplacementDrainTargetSeconds,
-            IsCensored, GetCensorRegions, GetCensorRegion, status, log);
+            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver);
 
         output = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 80, NumberOfBuffers = 3 };
         output.Init(switcher);
@@ -349,6 +360,9 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<double,CensorRegion?> getCensorRegion;
         private readonly Action<string> censorStatus;
         private readonly Action<string> log;
+        private readonly Func<string, double>? replacementVolumeResolver;
+        private readonly Func<double>? outputVolumeResolver;
+        private double outputVolume = 1.0;
         private double sourceReadSeconds;
         private double lastOutputLogSecond=-1;
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
@@ -356,17 +370,34 @@ public sealed class AudioEngine : IDisposable
         public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, BufferedWaveProvider live,
             Action finishDrain, Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds, Func<double> getDrainTargetSeconds, Func<double> getReplacementDrainTargetSeconds,
             Func<double,bool> isCensored, Func<double,double,List<CensorRegion>> getCensorRegions,
-            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log)
+            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver)
         {
             this.format=format; this.delayed=delayed; this.live=live; this.finishDrain=finishDrain; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds; this.getDrainTargetSeconds=getDrainTargetSeconds; this.getReplacementDrainTargetSeconds=getReplacementDrainTargetSeconds;
             this.isCensored=isCensored; this.getCensorRegions=getCensorRegions; this.getCensorRegion=getCensorRegion;
-            this.censorStatus=censorStatus; this.log=log;
+            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver;
+            outputVolume = Math.Clamp(outputVolumeResolver?.Invoke() ?? 1.0, 0.0, 1.5);
         }
         public WaveFormat WaveFormat=>format;
         public double CurrentSourceSeconds=>sourceReadSeconds;
         public void AddLiveSamples(byte[] data, int offset, int count) => live.AddSamples(data, offset, count);
         public void ClearLiveBuffer() => live.ClearBuffer();
         public void BeginDelayedTimeline(double baseSeconds) => sourceReadSeconds = Math.Max(0, baseSeconds);
+        public void SetOutputVolume(double volume) => outputVolume = Math.Clamp(volume, 0.0, 1.5);
+        private void ApplyOutputVolume(byte[] buffer, int offset, int bytes)
+        {
+            double volume = Math.Clamp(outputVolumeResolver?.Invoke() ?? outputVolume, 0.0, 1.5);
+            outputVolume = volume;
+            if (Math.Abs(volume - 1.0) < 0.0001) return;
+            int end = offset + (bytes - (bytes % 2));
+            for (int i = offset; i < end; i += 2)
+            {
+                short sample = (short)(buffer[i] | (buffer[i + 1] << 8));
+                int scaled = (int)Math.Round(sample * volume);
+                scaled = Math.Clamp(scaled, short.MinValue, short.MaxValue);
+                buffer[i] = (byte)(scaled & 0xFF);
+                buffer[i + 1] = (byte)((scaled >> 8) & 0xFF);
+            }
+        }
 
         public int Read(byte[] buffer,int offset,int count)
         {
@@ -377,6 +408,7 @@ public sealed class AudioEngine : IDisposable
                 int liveRead = live.Read(buffer, offset, count);
                 if(liveRead < count)
                     Array.Clear(buffer, offset + liveRead, count - liveRead);
+                ApplyOutputVolume(buffer, offset, count);
                 return count;
             }
 
@@ -448,6 +480,7 @@ public sealed class AudioEngine : IDisposable
             }
 
             sourceReadSeconds += read/(double)format.AverageBytesPerSecond;
+            ApplyOutputVolume(buffer, offset, count);
             return count;
         }
 
@@ -518,6 +551,19 @@ public sealed class AudioEngine : IDisposable
                     return false;
 
                 Buffer.BlockCopy(pcm, sourceByte, buffer, destinationOffset, copyBytes);
+
+                double volume = Math.Clamp(replacementVolumeResolver?.Invoke(region.Word) ?? 1.0, 0.0, 1.5);
+                if (Math.Abs(volume - 1.0) > 0.0001)
+                {
+                    int end = destinationOffset + copyBytes;
+                    for (int i = destinationOffset; i < end; i += 2)
+                    {
+                        short sample = (short)(buffer[i] | (buffer[i + 1] << 8));
+                        int scaled = Math.Clamp((int)Math.Round(sample * volume), short.MinValue, short.MaxValue);
+                        buffer[i] = (byte)(scaled & 0xFF);
+                        buffer[i + 1] = (byte)((scaled >> 8) & 0xFF);
+                    }
+                }
 
                 // Never let uncopied bytes expose the original microphone audio.
                 if (copyBytes < bytes)

@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using System.Windows.Forms;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 
 namespace VoiceGuard;
 
@@ -37,6 +39,12 @@ public sealed class MainForm : Form
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ReplacementPlaybackSettings> replacementPlaybackSettings =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> replacementVolumes =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly TrackBar outputVolume = new();
+    private readonly Label outputVolumeValue = new();
+    private bool draggingReplacementVolume;
+    private int draggingReplacementIndex = -1;
     private readonly TextBox log = new();
     private readonly Label mode = new();
     private readonly Label status = new();
@@ -63,6 +71,9 @@ public sealed class MainForm : Form
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
     private const uint MOD_NOREPEAT = 0x4000;
+
+    [DllImport("uxtheme.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int SetWindowTheme(IntPtr hWnd, string? pszSubAppName, string? pszSubIdList);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -94,6 +105,8 @@ public sealed class MainForm : Form
         public Dictionary<string, List<string>> Aliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, string?> ReplacementSounds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, ReplacementPlaybackSettings> ReplacementPlayback { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, double> ReplacementVolumes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public decimal OutputVolumePercent { get; set; } = 100M;
         public decimal DelaySeconds { get; set; } = 3M;
         public string PttKey { get; set; } = Keys.Z.ToString();
         public string? InputDevice { get; set; }
@@ -131,7 +144,7 @@ public sealed class MainForm : Form
     {
         ApplyWindowAndTaskbarIcon();
 
-        Text = "VoiceGuard — Stage 6.6.3";
+        Text = "VoiceGuard — Stage 6.6.4";
         Width = 1180;
         Height = 720;
         MinimumSize = new Size(1000, 620);
@@ -218,7 +231,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 13,
+            RowCount = 14,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -229,6 +242,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // input
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); // output label
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // output
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // master output volume
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // model heading
                 left.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // start/stop
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // settings heading
@@ -239,6 +253,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
         main.Controls.Add(left, 0, 0);
+        ApplyDarkScrollbarTheme(left);
 
         var inputLabel = MakeFieldLabel("Input");
         left.Controls.Add(inputLabel, 0, 0);
@@ -256,7 +271,35 @@ public sealed class MainForm : Form
         output.Margin = new Padding(0, 0, 0, 4);
         left.Controls.Add(output, 0, 3);
 
-        left.Controls.Add(MakeSectionTitle("MODEL & CONTROL"), 0, 4);
+        var outputVolumePanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var outputVolumeLabel = MakeFieldLabel("Headset Output Volume");
+        outputVolumePanel.Controls.Add(outputVolumeLabel);
+        outputVolume.Dock = DockStyle.Bottom;
+        outputVolume.Height = 28;
+        outputVolume.Minimum = 0;
+        outputVolume.Maximum = 150;
+        outputVolume.TickFrequency = 25;
+        outputVolume.SmallChange = 5;
+        outputVolume.LargeChange = 10;
+        outputVolume.Value = 100;
+        outputVolume.Margin = new Padding(0, 0, 48, 0);
+        outputVolumePanel.Controls.Add(outputVolume);
+        outputVolumeValue.Text = "100%";
+        outputVolumeValue.Width = 45;
+        outputVolumeValue.Height = 28;
+        outputVolumeValue.TextAlign = ContentAlignment.MiddleRight;
+        outputVolumeValue.ForeColor = TextDim;
+        outputVolumeValue.Dock = DockStyle.Right;
+        outputVolumePanel.Controls.Add(outputVolumeValue);
+        outputVolume.ValueChanged += (_, _) =>
+        {
+            outputVolumeValue.Text = $"{outputVolume.Value}%";
+            engine?.SetOutputVolume(outputVolume.Value / 100.0);
+            if (!loadingPersistence) SavePersistence();
+        };
+        left.Controls.Add(outputVolumePanel, 0, 4);
+
+        left.Controls.Add(MakeSectionTitle("MODEL & CONTROL"), 0, 5);
 
         start.Text = "Start VoiceGuard";
         StyleButton(start, true);
@@ -264,9 +307,9 @@ public sealed class MainForm : Form
         start.Margin = new Padding(0, 2, 0, 6);
         start.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
         start.Click += async (_, _) => await ToggleEngineAsync();
-        left.Controls.Add(start, 0, 5);
+        left.Controls.Add(start, 0, 6);
 
-        left.Controls.Add(MakeSectionTitle("SETTINGS"), 0, 6);
+        left.Controls.Add(MakeSectionTitle("SETTINGS"), 0, 7);
 
         var delayPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         delayPanel.Controls.Add(MakeFieldLabel("Delay"));
@@ -279,7 +322,7 @@ public sealed class MainForm : Form
         delay.Increment = 0.5M;
         delay.Value = 3;
         delayPanel.Controls.Add(delay);
-        left.Controls.Add(delayPanel, 0, 7);
+        left.Controls.Add(delayPanel, 0, 8);
 
         var pttPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
         pttPanel.Controls.Add(MakeFieldLabel("PTT key"));
@@ -296,7 +339,7 @@ public sealed class MainForm : Form
             e.SuppressKeyPress = true;
         };
         pttPanel.Controls.Add(ptt);
-        left.Controls.Add(pttPanel, 0, 8);
+        left.Controls.Add(pttPanel, 0, 9);
 
         var startupPanel = new TableLayoutPanel
         {
@@ -353,7 +396,7 @@ public sealed class MainForm : Form
         hotkeyPanel.Controls.Add(startStopHotkey);
         startupPanel.Controls.Add(hotkeyPanel, 0, 2);
 
-        left.Controls.Add(startupPanel, 0, 9);
+        left.Controls.Add(startupPanel, 0, 10);
 
         // A compact status area lives below the fixed controls if there is
         // room; it does not participate in the three primary control order.
@@ -368,10 +411,10 @@ public sealed class MainForm : Form
         mode.Dock = DockStyle.Fill;
         mode.Height = 30;
         mode.Margin = new Padding(0);
-        left.Controls.Add(mode, 0, 10);
+        left.Controls.Add(mode, 0, 11);
         status.Dock = DockStyle.Fill;
         status.Margin = new Padding(0);
-        left.Controls.Add(status, 0, 11);
+        left.Controls.Add(status, 0, 12);
 
         var jackBrand = new PictureBox
         {
@@ -399,7 +442,7 @@ public sealed class MainForm : Form
             }
         }
 
-        left.Controls.Add(jackBrand, 0, 12);
+        left.Controls.Add(jackBrand, 0, 13);
 
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
@@ -434,13 +477,16 @@ public sealed class MainForm : Form
         words.BackColor = Surface;
         words.ForeColor = TextMain;
         words.DrawMode = DrawMode.OwnerDrawFixed;
-        words.ItemHeight = 32;
+        words.ItemHeight = 70;
         words.IntegralHeight = false;
         words.HorizontalScrollbar = true;
         words.ScrollAlwaysVisible = false;
         words.DrawItem += DrawBlockedWordItem;
+        words.MouseDown += WordsMouseDown;
+        words.MouseMove += WordsMouseMove;
         words.MouseUp += WordsMouseUp;
         wordPanel.Controls.Add(words, 0, 1);
+        ApplyDarkScrollbarTheme(words);
 
         var wordBottom = new TableLayoutPanel
         {
@@ -726,6 +772,7 @@ public sealed class MainForm : Form
             blockedWordAliases.Clear();
             replacementSounds.Clear();
             replacementPlaybackSettings.Clear();
+            replacementVolumes.Clear();
 
             foreach (var word in config.BlockedWords
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -778,6 +825,19 @@ public sealed class MainForm : Form
                         Math.Clamp(value.DurationSeconds, 0.1, 5.0));
                 }
             }
+
+            foreach (var pair in config.ReplacementVolumes ?? new Dictionary<string, double>())
+            {
+                var actualWord = words.Items.Cast<object>()
+                    .Select(x => x?.ToString() ?? "")
+                    .FirstOrDefault(x => string.Equals(x, pair.Key, StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(actualWord))
+                    replacementVolumes[actualWord] = Math.Clamp(pair.Value, 0.0, 1.5);
+            }
+
+            if (config.OutputVolumePercent >= 0 && config.OutputVolumePercent <= 150)
+                outputVolume.Value = (int)Math.Round(config.OutputVolumePercent);
+            outputVolumeValue.Text = $"{outputVolume.Value}%";
 
             if (config.DelaySeconds >= delay.Minimum && config.DelaySeconds <= delay.Maximum)
                 delay.Value = config.DelaySeconds;
@@ -836,6 +896,11 @@ public sealed class MainForm : Form
                     pair => pair.Key,
                     pair => pair.Value,
                     StringComparer.OrdinalIgnoreCase),
+                ReplacementVolumes = replacementVolumes.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value,
+                    StringComparer.OrdinalIgnoreCase),
+                OutputVolumePercent = outputVolume.Value,
                 DelaySeconds = delay.Value,
                 PttKey = (ptt.Tag is Keys key ? key : Keys.Z).ToString(),
                 InputDevice = input.SelectedItem is AudioDeviceInfo inputDevice ? inputDevice.Name : null,
@@ -1115,71 +1180,102 @@ public sealed class MainForm : Form
             .ToArray();
     }
 
+    private static void ApplyDarkScrollbarTheme(Control control)
+    {
+        try
+        {
+            _ = control.Handle;
+            // Windows exposes a dark scrollbar theme through the UxTheme API.
+            // If unavailable on an older Windows build, the normal scrollbar remains.
+            SetWindowTheme(control.Handle, "DarkMode_Explorer", null);
+        }
+        catch
+        {
+            // Scrollbar theming is cosmetic only.
+        }
+    }
+
     private void DrawBlockedWordItem(object? sender, DrawItemEventArgs e)
     {
         e.DrawBackground();
-
-        if (e.Index >= 0 && e.Index < words.Items.Count)
+        if (e.Index < 0 || e.Index >= words.Items.Count) { e.DrawFocusRectangle(); return; }
+        string value = words.Items[e.Index]?.ToString() ?? "";
+        bool hasSound = replacementSounds.TryGetValue(value, out var sound) && !string.IsNullOrWhiteSpace(sound);
+        var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
+        using var pen = new Pen(Border);
+        using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
+        e.Graphics.FillRectangle(brush, outer); e.Graphics.DrawRectangle(pen, outer);
+        var wordRect = new Rectangle(outer.Left + 8, outer.Top + 4, Math.Max(80, outer.Width - 150), 24);
+        TextRenderer.DrawText(e.Graphics, value, words.Font, wordRect, TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+        var replacementRect = new Rectangle(outer.Right - 128, outer.Top + 4, 118, 25);
+        using (var replacementBrush = new SolidBrush(hasSound ? Color.FromArgb(72, 31, 112) : Surface))
+        using (var replacementPen = new Pen(hasSound ? Accent : Border))
+        { e.Graphics.FillRectangle(replacementBrush, replacementRect); e.Graphics.DrawRectangle(replacementPen, replacementRect); }
+        TextRenderer.DrawText(e.Graphics, "🔊 Replacement", words.Font, replacementRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        if (hasSound)
         {
-            string value = words.Items[e.Index]?.ToString() ?? "";
-            string displayValue = value;
-            if (replacementSounds.TryGetValue(value, out var sound) && !string.IsNullOrWhiteSpace(sound))
-            {
-                displayValue += "  [SOUND: " + System.IO.Path.GetFileName(sound) + "]";
-                if (replacementPlaybackSettings.TryGetValue(value, out var playback))
-                    displayValue += playback.MatchWordLength ? "  [AUTO]" : $"  [{playback.DurationSeconds:0.0}s]";
-            }
-
-            var outer = new Rectangle(
-                e.Bounds.Left + 4,
-                e.Bounds.Top + 3,
-                e.Bounds.Width - 8,
-                e.Bounds.Height - 6);
-
-            using var pen = new Pen(Border);
-            using var brush = new SolidBrush(
-                e.State.HasFlag(DrawItemState.Selected)
-                    ? Color.FromArgb(65, 34, 92)
-                    : Surface2);
-
-            e.Graphics.FillRectangle(brush, outer);
-            e.Graphics.DrawRectangle(pen, outer);
-
-            TextRenderer.DrawText(
-                e.Graphics,
-                displayValue,
-                words.Font,
-                new Rectangle(
-                    outer.Left + 8,
-                    outer.Top,
-                    outer.Width - 16,
-                    outer.Height),
-                e.State.HasFlag(DrawItemState.Selected)
-                    ? Color.White
-                    : TextMain,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+            DrawVolumeSlider(e.Graphics, GetReplacementSliderRect(index: e.Index), GetReplacementVolume(value));
+            var testRect = GetReplacementTestRect(e.Index);
+            using var testBrush = new SolidBrush(Color.FromArgb(37, 29, 49));
+            using var testPen = new Pen(Border);
+            e.Graphics.FillRectangle(testBrush, testRect); e.Graphics.DrawRectangle(testPen, testRect);
+            TextRenderer.DrawText(e.Graphics, "Test", words.Font, testRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
-
         e.DrawFocusRectangle();
     }
 
+    private void DrawVolumeSlider(Graphics g, Rectangle rect, double volume)
+    {
+        int y = rect.Top + rect.Height / 2, left = rect.Left + 4, right = rect.Right - 4;
+        using var trackPen = new Pen(Border, 4); g.DrawLine(trackPen, left, y, right, y);
+        int x = left + (int)Math.Round((right - left) * Math.Clamp(volume / 1.5, 0.0, 1.0));
+        using var fillPen = new Pen(Accent, 4); g.DrawLine(fillPen, left, y, x, y);
+        using var knobBrush = new SolidBrush(AccentBright); g.FillEllipse(knobBrush, x - 6, y - 6, 12, 12);
+        TextRenderer.DrawText(g, $"{Math.Round(volume * 100):0}%", words.Font, new Rectangle(rect.Right + 6, rect.Top - 5, 48, 28), TextDim, TextFormatFlags.VerticalCenter);
+    }
+
+    private Rectangle GetReplacementSliderRect(int index)
+    {
+        var b = words.GetItemRectangle(index); var o = new Rectangle(b.Left + 4, b.Top + 3, b.Width - 8, b.Height - 6);
+        return new Rectangle(o.Left + 8, o.Top + 38, Math.Max(80, o.Width - 170), 18);
+    }
+    private Rectangle GetReplacementTestRect(int index)
+    {
+        var b = words.GetItemRectangle(index); var o = new Rectangle(b.Left + 4, b.Top + 3, b.Width - 8, b.Height - 6);
+        return new Rectangle(o.Right - 88, o.Top + 34, 80, 27);
+    }
+    private Rectangle GetReplacementButtonRect(int index)
+    {
+        var b = words.GetItemRectangle(index); var o = new Rectangle(b.Left + 4, b.Top + 3, b.Width - 8, b.Height - 6);
+        return new Rectangle(o.Right - 128, o.Top + 4, 118, 25);
+    }
+    private void SetReplacementVolumeFromPoint(int index, int x)
+    {
+        if (index < 0 || index >= words.Items.Count) return;
+        string word = words.Items[index]?.ToString() ?? ""; if (!replacementSounds.ContainsKey(word)) return;
+        var r = GetReplacementSliderRect(index); int left = r.Left + 4, right = r.Right - 4;
+        double normalized = right <= left ? 1.0 : (x - left) / (double)(right - left);
+        replacementVolumes[word] = Math.Clamp(normalized, 0.0, 1.0) * 1.5;
+        words.Invalidate(words.GetItemRectangle(index)); SavePersistence();
+    }
+    private void WordsMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return; int index = words.IndexFromPoint(e.Location);
+        if (index < 0 || index >= words.Items.Count) return; words.SelectedIndex = index;
+        string word = words.Items[index]?.ToString() ?? ""; if (!replacementSounds.ContainsKey(word)) return;
+        if (GetReplacementSliderRect(index).Contains(e.Location)) { draggingReplacementVolume = true; draggingReplacementIndex = index; SetReplacementVolumeFromPoint(index, e.X); }
+        else if (GetReplacementTestRect(index).Contains(e.Location)) TestReplacementSound(word);
+        else if (GetReplacementButtonRect(index).Contains(e.Location)) SetReplacementSoundForSelectedWord();
+    }
+    private void WordsMouseMove(object? sender, MouseEventArgs e)
+    {
+        if (draggingReplacementVolume && draggingReplacementIndex >= 0 && e.Button == MouseButtons.Left) SetReplacementVolumeFromPoint(draggingReplacementIndex, e.X);
+    }
     private void WordsMouseUp(object? sender, MouseEventArgs e)
     {
-        if (e.Button != MouseButtons.Right)
-            return;
-
-        int index = words.IndexFromPoint(e.Location);
-
-        // Do not show the menu when the user right-clicks empty space.
-        if (index < 0 || index >= words.Items.Count)
-            return;
-
-        words.SelectedIndex = index;
-
-        // Explicitly show the menu. This avoids relying on the
-        // ListBox/ContextMenuStrip automatic routing, which was unreliable
-        // in the previous build.
-        wordsMenu.Show(words, e.Location);
+        if (e.Button == MouseButtons.Left) { draggingReplacementVolume = false; draggingReplacementIndex = -1; return; }
+        if (e.Button != MouseButtons.Right) return; int index = words.IndexFromPoint(e.Location);
+        if (index < 0 || index >= words.Items.Count) return; words.SelectedIndex = index; wordsMenu.Show(words, e.Location);
     }
 
     private void AddBlockedWord()
@@ -1209,6 +1305,7 @@ public sealed class MainForm : Form
             blockedWordAliases.Remove(word);
             replacementSounds.Remove(word);
             replacementPlaybackSettings.Remove(word);
+            replacementVolumes.Remove(word);
             SyncAliasesToDetector();
             words.Invalidate();
             SavePersistence();
@@ -1269,6 +1366,67 @@ public sealed class MainForm : Form
         return replacementSounds.TryGetValue(word, out var path) && !string.IsNullOrWhiteSpace(path)
             ? path
             : null;
+    }
+
+    private double GetReplacementVolume(string word)
+    {
+        return replacementVolumes.TryGetValue(word, out var volume) ? Math.Clamp(volume, 0.0, 1.5) : 1.0;
+    }
+
+    private async void TestReplacementSound(string word)
+    {
+        var path = GetReplacementSound(word);
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            MessageBox.Show(this, "No replacement sound is assigned to this word.", "VoiceGuard", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        try
+        {
+            double volume = Math.Clamp(GetReplacementVolume(word) * (outputVolume.Value / 100.0), 0.0, 1.5);
+            await Task.Run(() => PlayReplacementOnDefaultDevice(path, volume));
+        }
+        catch (Exception ex)
+        {
+            AddLog($"REPLACEMENT TEST ERROR: {Path.GetFileName(path)} — {ex.Message}");
+        }
+    }
+
+    private sealed class GainSampleProvider : ISampleProvider
+    {
+        private readonly ISampleProvider source;
+        private readonly float gain;
+        public GainSampleProvider(ISampleProvider source, double gain)
+        {
+            this.source = source;
+            this.gain = (float)Math.Clamp(gain, 0.0, 1.5);
+        }
+        public WaveFormat WaveFormat => source.WaveFormat;
+        public int Read(float[] buffer, int offset, int count)
+        {
+            int read = source.Read(buffer, offset, count);
+            if (Math.Abs(gain - 1f) < 0.0001f) return read;
+            if (gain <= 1f)
+            {
+                for (int i = offset; i < offset + read; i++) buffer[i] *= gain;
+                return read;
+            }
+            double denominator = Math.Tanh(gain);
+            for (int i = offset; i < offset + read; i++)
+                buffer[i] = (float)(Math.Tanh(buffer[i] * gain) / denominator);
+            return read;
+        }
+    }
+
+    private static void PlayReplacementOnDefaultDevice(string path, double volume)
+    {
+        using var reader = new AudioFileReader(path);
+        var volumeProvider = new GainSampleProvider(reader, Math.Clamp(volume, 0.0, 1.5));
+        using var player = new WaveOutEvent { DeviceNumber = -1, DesiredLatency = 80, NumberOfBuffers = 3 };
+        player.Init(volumeProvider);
+        player.Play();
+        while (player.PlaybackState == PlaybackState.Playing)
+            System.Threading.Thread.Sleep(20);
     }
 
     private ReplacementPlaybackSettings GetReplacementPlaybackSettings(string word)
@@ -1600,7 +1758,9 @@ public sealed class MainForm : Form
                 () => detector.HasPendingAnalysis,
                 () => detector.AnalysisSafeThroughSeconds,
                 GetReplacementSound,
-                GetReplacementPlaybackSettings);
+                GetReplacementPlaybackSettings,
+                GetReplacementVolume,
+                () => outputVolume.Value / 100.0);
 
             detector.SetOutputCursorProvider(() => newEngine.CurrentSourceSeconds);
 
