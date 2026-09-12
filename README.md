@@ -165,6 +165,21 @@ Soundboard audio includes a waveform-based editor for selecting the portion of a
 
 Soundboard clips are not subject to the 5-second replacement-sound limit. Longer soundboard clips are supported and remain queued long enough to finish before VoiceGuard returns to live passthrough.
 
+### Soundboard Playback
+
+When a soundboard clip is triggered, VoiceGuard plays the clip through the configured voice-chat/output path so the game can receive it, while also playing a local copy through the computer's normal Windows playback device so **you can hear the soundboard audio through your headset**.
+
+The PTT key remains held for the duration of the soundboard transmission, including the configured VoiceGuard delay and a small safety margin. This keeps the game's voice input active for the complete clip instead of releasing PTT early.
+
+The configured Soundboard Listen Key acts as a **toggle while a soundboard clip is playing**. Pressing it a second time immediately:
+
+- Stops the local headset playback.
+- Cancels the remaining queued soundboard playback.
+- Releases the PTT key immediately.
+- Returns VoiceGuard to normal live mode without waiting for the clip to finish.
+
+This allows a soundboard transmission to be interrupted at any point without having to wait for the remainder of a long clip.
+
 ### Soundboard Volume and Testing
 
 Each soundboard clip can have its own playback volume from **0% to 150%**.
@@ -209,6 +224,9 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 - Adjustable PTT filtering delay
 - Optional Soundboard feature with spoken triggers and aliases
 - Soundboard waveform selection and long-form audio playback
+- Soundboard audio playback through the user's headset while transmitting through the voice-chat output path
+- Soundboard PTT remains held for the complete transmission
+- Second-press Soundboard key cancellation with immediate playback stop and PTT release
 - Soundboard volume control up to 150%
 - Local Soundboard Test playback
 - Global Start/Stop hotkey
