@@ -43,6 +43,7 @@ public sealed class AudioEngine : IDisposable
     private double drainTargetSeconds;
     private bool stopped;
     private bool soundboardListening;
+    private bool soundboardPlaybackActive;
     private long capturePackets;
     private long captureBytes;
     private double capturePcmSeconds;
@@ -104,7 +105,40 @@ public sealed class AudioEngine : IDisposable
             return 0.0;
 
         AddSoundboardRegion(start, start + 0.050, phrase, soundPath);
+        lock (stateLock) soundboardPlaybackActive = true;
         return duration;
+    }
+
+    public bool CancelSoundboardPlayback()
+    {
+        bool wasActive;
+        lock (stateLock)
+        {
+            wasActive = soundboardPlaybackActive || ptt || delayedMode || draining;
+            soundboardPlaybackActive = false;
+            soundboardListening = false;
+            ptt = false;
+            draining = false;
+            delayedMode = false;
+            drainTargetSeconds = 0;
+        }
+
+        lock (censorLock)
+        {
+            censorRegions.RemoveAll(r => r.IsSoundboard);
+        }
+
+        try { delayed?.ClearBuffer(); } catch { }
+        try { live?.ClearBuffer(); } catch { }
+        try { switcher?.ClearLiveBuffer(); } catch { }
+        try { analysisSegmentEnd?.Invoke(capturePcmSeconds); } catch { }
+
+        if (wasActive)
+        {
+            log("SOUNDBOARD PLAYBACK CANCELLED — audio region removed and output returned to live passthrough");
+            status("Soundboard playback stopped — PTT released.");
+        }
+        return wasActive;
     }
 
     public void SetOutputVolume(double volume)
@@ -349,6 +383,7 @@ public sealed class AudioEngine : IDisposable
             else if (!down && ptt)
             {
                 ptt = false;
+                soundboardPlaybackActive = false;
                 draining = true;
                 delayedMode = true;
                 drainTargetSeconds = capturePcmSeconds;

@@ -58,6 +58,10 @@ public sealed class MainForm : Form
     private CancellationTokenSource? soundboardListenKeyCts;
     private int soundboardListenVirtualKey = (int)Keys.OemPeriod;
     private int soundboardListenKeyDown;
+    private bool soundboardPlaybackActive;
+    private CancellationTokenSource? soundboardPlaybackCts;
+    private WaveOutEvent? soundboardHeadsetOutput;
+    private AudioFileReader? soundboardHeadsetReader;
     private readonly Button editSoundboard = new();
     private readonly TrackBar outputVolume = new();
     private readonly Label outputVolumeValue = new();
@@ -670,7 +674,7 @@ public sealed class MainForm : Form
         addSoundboard.Text = "Add phrase"; StyleButton(addSoundboard, false); addSoundboard.Margin = new Padding(0,0,6,2); addSoundboard.Click += (_,_) => AddSoundboardPhrase();
         editSoundboard.Text = "Edit"; StyleButton(editSoundboard, false); editSoundboard.Margin = new Padding(0,0,6,2); editSoundboard.Click += (_,_) => EditSelectedSoundboard();
         removeSoundboard.Text = "Remove"; StyleButton(removeSoundboard, false); removeSoundboard.Margin = new Padding(0,0,6,2); removeSoundboard.Click += (_,_) => RemoveSelectedSoundboard();
-        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => BeginSoundboardListenFromKey();
+        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => { if (soundboardPlaybackActive || soundboardListenInProgress) CancelSoundboardPlayback(); else BeginSoundboardListenFromKey(); };
         sbButtons.Controls.Add(addSoundboard,0,0); sbButtons.Controls.Add(editSoundboard,1,0); sbButtons.Controls.Add(removeSoundboard,2,0); sbButtons.Controls.Add(listenSoundboard,3,0);
         soundboardBottom.Controls.Add(sbButtons,0,0);
         soundboardBottom.Controls.Add(new Label
@@ -1592,9 +1596,6 @@ public sealed class MainForm : Form
         {
             var key = ptt.Tag is Keys k ? k : Keys.Z;
 
-            // Drive VoiceGuard's own PTT state directly as well as injecting the
-            // physical key for the game. This makes the soundboard path independent
-            // of whether the low-level keyboard hook receives injected events.
             currentEngine.SetPtt(true);
             PttKeyInjector.KeyDown(key);
 
@@ -1609,10 +1610,18 @@ public sealed class MainForm : Form
                 return;
             }
 
-            // Keep the real game PTT key held until the delayed soundboard clip
-            // has actually reached the game. The extra 350 ms gives the output
-            // device a small safety margin before releasing the game PTT.
-            double holdSeconds = Math.Max(0.5, currentEngine.DelaySeconds + duration + 0.35);
+            StartSoundboardHeadsetPlayback(phrase);
+            soundboardPlaybackActive = true;
+            soundboardPlaybackCts?.Cancel();
+            soundboardPlaybackCts?.Dispose();
+            soundboardPlaybackCts = new CancellationTokenSource();
+            var playbackToken = soundboardPlaybackCts.Token;
+
+            // The game must keep receiving the configured PTT key for the entire
+            // soundboard clip, plus the configured VoiceGuard delay and a small
+            // output safety margin. The key is released by the same cancellation
+            // path used when the user presses the soundboard key again.
+            double holdSeconds = Math.Max(0.5, currentEngine.DelaySeconds + duration + 0.50);
             AddLog($"SOUNDBOARD PTT INJECTED — key={key} | hold={holdSeconds:0.000}s | phrase=\"{phrase}\"");
             SetStatus($"SOUNDBOARD TRANSMITTING — {phrase}");
             SetMode("SOUNDBOARD TRANSMIT");
@@ -1621,32 +1630,125 @@ public sealed class MainForm : Form
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(holdSeconds));
+                    await Task.Delay(TimeSpan.FromSeconds(holdSeconds), playbackToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
                 }
                 finally
                 {
-                    try { currentEngine.SetPtt(false); } catch { }
-                    try { PttKeyInjector.KeyUp(key); } catch { }
-                    if (!IsDisposed)
+                    if (!playbackToken.IsCancellationRequested)
                     {
-                        BeginInvoke(() =>
+                        try { currentEngine.SetPtt(false); } catch { }
+                        try { PttKeyInjector.KeyUp(key); } catch { }
+                        StopSoundboardHeadsetPlayback();
+                        soundboardPlaybackActive = false;
+                        if (!IsDisposed)
                         {
-                            listenSoundboard.Enabled = true;
-                            SetMode("LIVE");
-                            SetStatus("READY — PTT-gated delayed output is active.");
-                        });
+                            BeginInvoke(() =>
+                            {
+                                listenSoundboard.Enabled = true;
+                                SetMode("LIVE");
+                                SetStatus("READY — PTT-gated delayed output is active.");
+                            });
+                        }
                     }
                 }
             });
         }
         catch (Exception ex)
         {
+            try { currentEngine.SetPtt(false); } catch { }
             try { PttKeyInjector.KeyUp(ptt.Tag is Keys k ? k : Keys.Z); } catch { }
+            StopSoundboardHeadsetPlayback();
+            soundboardPlaybackActive = false;
             listenSoundboard.Enabled = true;
             SetMode("LIVE");
             SetStatus("Soundboard trigger failed.");
             AddLog($"SOUNDBOARD PTT INJECTION ERROR — {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    private void StartSoundboardHeadsetPlayback(string phrase)
+    {
+        StopSoundboardHeadsetPlayback();
+        string? path = GetSoundboardSound(phrase);
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+
+        try
+        {
+            double volume = Math.Clamp(GetSoundboardVolume(phrase) * (outputVolume.Value / 100.0), 0.0, 1.5);
+            var reader = new AudioFileReader(path);
+            var provider = new GainSampleProvider(reader, volume);
+            var player = new WaveOutEvent { DeviceNumber = -1, DesiredLatency = 80, NumberOfBuffers = 3 };
+            soundboardHeadsetReader = reader;
+            soundboardHeadsetOutput = player;
+            player.PlaybackStopped += SoundboardHeadsetPlaybackStopped;
+            player.Init(provider);
+            player.Play();
+            AddLog($"SOUNDBOARD HEADSET PLAYBACK — {Path.GetFileName(path)} | volume={volume:P0}");
+        }
+        catch (Exception ex)
+        {
+            StopSoundboardHeadsetPlayback();
+            AddLog($"SOUNDBOARD HEADSET PLAYBACK ERROR — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void SoundboardHeadsetPlaybackStopped(object? sender, StoppedEventArgs e)
+    {
+        if (ReferenceEquals(sender, soundboardHeadsetOutput))
+        {
+            var player = soundboardHeadsetOutput;
+            try { player.PlaybackStopped -= SoundboardHeadsetPlaybackStopped; } catch { }
+            try { player.Dispose(); } catch { }
+            try { soundboardHeadsetReader?.Dispose(); } catch { }
+            soundboardHeadsetOutput = null;
+            soundboardHeadsetReader = null;
+        }
+    }
+
+    private void StopSoundboardHeadsetPlayback()
+    {
+        try
+        {
+            if (soundboardHeadsetOutput != null)
+            {
+                soundboardHeadsetOutput.PlaybackStopped -= SoundboardHeadsetPlaybackStopped;
+                soundboardHeadsetOutput.Stop();
+                soundboardHeadsetOutput.Dispose();
+            }
+        }
+        catch { }
+        finally
+        {
+            soundboardHeadsetOutput = null;
+            try { soundboardHeadsetReader?.Dispose(); } catch { }
+            soundboardHeadsetReader = null;
+        }
+    }
+
+    private void CancelSoundboardPlayback()
+    {
+        var currentEngine = engine;
+        var key = ptt.Tag is Keys k ? k : Keys.Z;
+        soundboardPlaybackCts?.Cancel();
+        soundboardPlaybackCts?.Dispose();
+        soundboardPlaybackCts = null;
+        soundboardPlaybackActive = false;
+
+        try { detector?.StopSoundboardListen(); } catch { }
+        try { currentEngine?.CancelSoundboardPlayback(); } catch { }
+        try { currentEngine?.SetPtt(false); } catch { }
+        try { PttKeyInjector.KeyUp(key); } catch { }
+        StopSoundboardHeadsetPlayback();
+
+        soundboardListenInProgress = false;
+        listenSoundboard.Enabled = true;
+        SetMode("LIVE");
+        SetStatus("Soundboard playback stopped — PTT released.");
+        AddLog("SOUNDBOARD PLAYBACK CANCELLED — PTT released immediately");
     }
 
     private void AddSoundboardPhrase()
@@ -2394,7 +2496,15 @@ public sealed class MainForm : Form
                         {
                             try
                             {
-                                if (!IsDisposed) BeginInvoke(BeginSoundboardListenFromKey);
+                                if (!IsDisposed) BeginInvoke(() =>
+                                {
+                                    if (soundboardPlaybackActive)
+                                        CancelSoundboardPlayback();
+                                    else if (soundboardListenInProgress)
+                                        CancelSoundboardPlayback();
+                                    else
+                                        BeginSoundboardListenFromKey();
+                                });
                             }
                             catch { }
                         }
@@ -2533,6 +2643,11 @@ public sealed class MainForm : Form
 
     private void StopEngine()
     {
+        try { soundboardPlaybackCts?.Cancel(); } catch { }
+        soundboardPlaybackCts?.Dispose();
+        soundboardPlaybackCts = null;
+        soundboardPlaybackActive = false;
+        StopSoundboardHeadsetPlayback();
         soundboardListenInProgress = false;
         listenSoundboard.Enabled = true;
         try { PttKeyInjector.KeyUp(ptt.Tag is Keys k ? k : Keys.Z); } catch { }
