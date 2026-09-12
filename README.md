@@ -48,7 +48,49 @@ The latest Windows installer is available from the repository's GitHub Releases 
 9. **When PTT is not pressed, VoiceGuard passes microphone audio through live without filtering or Whisper transcription.**
 10. Release the push-to-talk key when finished speaking. VoiceGuard drains the remaining delayed audio and then returns to live passthrough.
 
-### Delay
+## Soundboard
+
+VoiceGuard includes a built-in **Soundboard** section for triggering saved audio clips from spoken phrases. Soundboard triggers are intended for use with games and other applications where you want a saved sound effect, voice line, or other audio clip to be transmitted through the configured PTT path.
+
+### Soundboard Setup
+
+1. Add a soundboard entry in the **Soundboard** section.
+2. Select an audio file and use the soundboard editor to choose the portion of the recording you want to use.
+3. Set the trigger phrase and, if needed, add one or more aliases for phrases Whisper commonly recognizes differently.
+4. Configure the soundboard listen key.
+5. Press the listen key and speak the configured trigger phrase.
+6. VoiceGuard recognizes the phrase, suppresses the spoken trigger from the transmitted audio, holds the configured PTT key, and plays the selected soundboard clip through the configured output path.
+
+The soundboard listen key opens a dedicated short listening window for trigger recognition rather than requiring the user to hold PTT while speaking the trigger. The listen key is configurable from the main window.
+
+### Soundboard Audio Selection
+
+The soundboard editor provides a waveform-based selector with:
+
+- Start and end time controls
+- A **Full** selection option
+- Play Selection
+- Play Full
+- Stop
+- Draggable start/end markers
+- A draggable selected range
+- **Use Selection** to assign only the selected portion of the source audio
+
+Soundboard clips can be longer than the 5-second replacement-sound limit used for profanity replacement effects. The selected soundboard clip is prepared for playback as its own full audio region.
+
+### Soundboard Aliases
+
+Soundboard entries support transcription aliases just like blocked-word aliases. Right-click a soundboard entry to add or manage aliases or replace/edit its WAV/audio source.
+
+Aliases are useful when Whisper consistently hears a trigger phrase differently from the phrase you want to use as the soundboard command.
+
+### Soundboard Volume and Test Playback
+
+Each soundboard entry has its own volume control from **0% to 150%** and a **Test** button. Test playback is local to the computer's normal Windows playback device and is not routed through the VoiceGuard/VB-CABLE output path.
+
+Soundboard playback uses the configured PTT path when actually triggered, so the soundboard clip is transmitted to the game or voice-chat application through the same output routing used by VoiceGuard.
+
+## Delay
 
 VoiceGuard uses a short audio delay during PTT transmission so Whisper has time to transcribe speech and detect blocked words before the audio reaches the output.
 
@@ -57,7 +99,7 @@ VoiceGuard uses a short audio delay during PTT transmission so Whisper has time 
 - Increasing the delay can improve filtering reliability, especially on slower systems or when processing more difficult audio.
 - The delay applies to the **PTT transmission path**; microphone audio while PTT is idle remains live passthrough.
 
-### Blocked Words
+## Blocked Words
 
 The **Blocked Words** list contains the words and phrases VoiceGuard will look for in Whisper's transcription while PTT is active.
 
@@ -71,7 +113,7 @@ To remove one, select it and click **Remove**.
 
 ## Replacement Sound Effects
 
-VoiceGuard can replace a detected blocked word with a custom sound instead of muting it. Each blocked word can have its own replacement sound and playback duration.
+VoiceGuard can replace a detected blocked word with a custom sound instead of muting it. Each blocked word can have its own replacement sound, playback duration, and replacement volume.
 
 ### Assigning a Replacement Sound
 
@@ -91,6 +133,17 @@ Each blocked word has its own playback-duration setting. Right-click the word an
 The selected duration is saved separately for each blocked word. Replacement playback continues through the selected duration even if PTT is released, then VoiceGuard returns to live passthrough.
 
 Replacement audio is converted and prepared before real-time censor playback, so codec conversion is not performed during live PTT processing. Consecutive blocked words remain separate events, allowing each replacement to use its own sound and playback setting.
+
+### Replacement Volume
+
+Each blocked word can have its own replacement-sound volume from **0% to 150%**. This is useful when a replacement recording is quieter than the surrounding voice audio.
+
+- **100%** is the normal playback level.
+- Levels above 100% provide additional gain for quieter replacement sounds.
+- The replacement volume is configured independently for each blocked word.
+- Use the **Test** button beside a replacement volume control to preview the sound locally. Test playback uses the computer's normal Windows playback device and is **not sent through the selected VoiceGuard/VB-CABLE output**.
+
+VoiceGuard also provides a **master output volume control from 0% to 150%** directly below the selected output device. This controls the volume of audio sent through VoiceGuard's output path.
 
 To remove a replacement sound, use the word's right-click menu and choose the option to clear it.
 
@@ -128,9 +181,56 @@ Aliases are useful when pronunciation, background noise, microphone quality, or 
 
 The NPU path is optional. VoiceGuard remains usable on systems that do not have a compatible Intel NPU.
 
+## Interface and Quality-of-Life Features
+
+The main VoiceGuard interface is organized into four sections:
+
+- **Controls** — input/output devices, master output volume, PTT key, soundboard listen key, delay, Start/Stop hotkey, and current mode/status.
+- **Blocked Words** — blocked phrases, replacement sounds, aliases, playback settings, per-word volume, and replacement Test playback.
+- **Soundboard** — soundboard phrases, aliases, audio selection, per-sound volume, and local Test playback.
+- **Logs** — the normal human-readable VoiceGuard activity log.
+
+The application remains horizontally scrollable when the available window width is too small to display all four sections at once. The main window does not require maximized startup.
+
+Additional quality-of-life features include:
+
+- Global Start/Stop hotkey
+- Configurable PTT key
+- Configurable soundboard listen key
+- Optional minimize-to-system-tray support
+- Optional start with Windows
+- Single-instance protection
+- Persistent configuration
+- Dedicated local soundboard Test playback
+
+## Diagnostic Logging
+
+VoiceGuard now includes a separate **diagnostic logger** intended to make troubleshooting easier when another user encounters a problem.
+
+The normal on-screen log remains focused on useful events such as `HEARD`, `FILTERED`, and `MISSED`. Detailed diagnostic information is written separately to a text log file.
+
+Diagnostic logging can include:
+
+- VoiceGuard startup and session information
+- Windows and .NET runtime information
+- Process architecture and process information
+- Application/model paths
+- Whisper runtime and initialization information
+- Audio engine and device information
+- PTT and soundboard activity
+- Detection and censor scheduling information
+- Exceptions and unexpected application errors
+
+Diagnostic logs are stored under the VoiceGuard `Logs` directory when the application has permission to write beside the executable. If that location is not writable, VoiceGuard uses its local application-data location instead of failing to start.
+
+Diagnostic logs are rotated when they become large so they do not grow indefinitely.
+
+When troubleshooting an issue, provide the relevant diagnostic log along with a description of what happened and the steps that reproduce the problem.
+
 ## Features
 
 - Designed for gaming and PTT-based voice chat
+- Four-section main interface
 - Live microphone passthrough when PTT is not pressed
 - Delayed and filtered audio while PTT is pressed
 - Local Whisper speech recognition
@@ -138,9 +238,19 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - CPU Whisper fallback
 - Configurable blocked words and phrases
 - Transcription aliases
-- Per-word replacement sounds and playback-duration settings
+- Per-word replacement sounds, playback-duration settings, and volume controls
 - Replacement audio conversion to WAV/PCM
-- 5-second maximum replacement-audio limit
+- 5-second maximum replacement-audio limit for profanity replacement sounds
+- Per-word replacement volume up to 150%
+- Master output volume control up to 150%
+- Local replacement-sound Test playback
+- Built-in soundboard with spoken phrase triggers
+- Soundboard aliases
+- Soundboard audio waveform selection and trimming
+- Soundboard clips longer than the profanity replacement limit
+- Per-soundboard volume up to 150%
+- Local soundboard Test playback
+- Configurable soundboard listen key
 - Adjustable PTT filtering delay
 - Global Start/Stop hotkey
 - Optional minimize-to-system-tray support
@@ -148,6 +258,8 @@ The NPU path is optional. VoiceGuard remains usable on systems that do not have 
 - Single-instance protection to prevent multiple VoiceGuard audio engines from running at once
 - Input/output device selection
 - Persistent settings stored in the user's local application data
+- Separate detailed diagnostic log files for troubleshooting
+- Horizontal scrolling when the four-section interface does not fit the available window width
 
 ## Building
 
@@ -182,7 +294,7 @@ Personally I use VoiceMeeter Banana in conjunction with this to switch from dire
 
 ## Settings and Persistence
 
-VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, delay, push-to-talk key, and selected audio devices.
+VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, master output volume, delay, push-to-talk key, soundboard listen key, soundboard phrases, soundboard aliases, soundboard audio assignments, soundboard volumes, selected audio devices, and other user-configurable settings.
 
 Settings are stored under:
 
