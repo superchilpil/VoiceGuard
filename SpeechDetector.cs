@@ -72,6 +72,18 @@ public sealed class SpeechDetector : IAsyncDisposable
     private long analysisSafeThroughBits;
 
     private Action<double, double, string>? censorRequested;
+    private Action<double, double, string>? soundboardRequested;
+    private Action<string>? soundboardListenRecognized;
+    private Action? soundboardListenNoMatch;
+    private readonly List<byte> soundboardListenPcm = new();
+    private bool soundboardListenActive;
+    private double soundboardListenStartSeconds;
+    private double soundboardListenDurationSeconds;
+    private CancellationTokenSource? soundboardListenTimeoutCts;
+    private int soundboardListenGeneration;
+    private readonly HashSet<string> soundboardPhrases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> soundboardAliases = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> lastSoundboardTrigger = new(StringComparer.OrdinalIgnoreCase);
     private Func<double>? outputCursorSeconds;
 
     public SpeechDetector(IEnumerable<string> words, Action<string> log, Func<double>? outputCursorSeconds = null)
@@ -89,6 +101,141 @@ public sealed class SpeechDetector : IAsyncDisposable
     public void SetCensorCallback(Action<double, double, string>? callback)
     {
         censorRequested = callback;
+    }
+
+    public void SetSoundboardCallback(Action<double, double, string>? callback)
+    {
+        soundboardRequested = callback;
+    }
+
+    public void SetSoundboardListenCallback(Action<string>? callback)
+    {
+        soundboardListenRecognized = callback;
+    }
+
+    public void SetSoundboardListenNoMatchCallback(Action? callback)
+    {
+        soundboardListenNoMatch = callback;
+    }
+
+    public void StartSoundboardListen(double absoluteStartSeconds, double durationSeconds = 3.5)
+    {
+        soundboardListenTimeoutCts?.Cancel();
+        soundboardListenTimeoutCts?.Dispose();
+        soundboardListenTimeoutCts = new CancellationTokenSource();
+        int generation = Interlocked.Increment(ref soundboardListenGeneration);
+        var token = soundboardListenTimeoutCts.Token;
+        double listenDuration;
+        lock (sync)
+        {
+            soundboardListenPcm.Clear();
+            soundboardListenActive = true;
+            soundboardListenStartSeconds = Math.Max(0, absoluteStartSeconds);
+            soundboardListenDurationSeconds = Math.Max(1.0, durationSeconds);
+            listenDuration = soundboardListenDurationSeconds;
+        }
+        log($"SOUNDBOARD LISTENING — {listenDuration:0.0}s");
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(listenDuration + 3.0), token); }
+            catch (OperationCanceledException) { return; }
+
+            bool expired = false;
+            lock (sync)
+            {
+                if (generation == soundboardListenGeneration && soundboardListenActive)
+                {
+                    soundboardListenActive = false;
+                    soundboardListenPcm.Clear();
+                    expired = true;
+                }
+            }
+            if (expired)
+            {
+                log("SOUNDBOARD LISTEN TIMEOUT — resetting listener.");
+                try { soundboardListenNoMatch?.Invoke(); } catch { }
+            }
+        });
+    }
+
+    public void StopSoundboardListen()
+    {
+        soundboardListenTimeoutCts?.Cancel();
+        lock (sync)
+        {
+            soundboardListenActive = false;
+            soundboardListenPcm.Clear();
+            Interlocked.Increment(ref soundboardListenGeneration);
+        }
+    }
+
+    public bool IsSoundboardListening
+    {
+        get { lock (sync) return soundboardListenActive; }
+    }
+
+    public void AddSoundboardListenPcm(byte[] pcm, int count, double absoluteStartSeconds)
+    {
+        if (!IsReady || count <= 0) return;
+
+        byte[]? window = null;
+        double start = 0;
+        double duration = 0;
+        lock (sync)
+        {
+            if (!soundboardListenActive) return;
+            if (soundboardListenPcm.Count == 0)
+                soundboardListenStartSeconds = Math.Max(0, absoluteStartSeconds);
+            soundboardListenPcm.AddRange(pcm.AsSpan(0, count).ToArray());
+
+            double collected = soundboardListenPcm.Count / (double)BytesPerSecond;
+            if (collected >= soundboardListenDurationSeconds)
+            {
+                window = soundboardListenPcm.ToArray();
+                start = soundboardListenStartSeconds;
+                duration = window.Length / (double)BytesPerSecond;
+                soundboardListenPcm.Clear();
+                soundboardListenActive = false;
+            }
+        }
+
+        if (window != null)
+        {
+            EnqueueWindow(window, start, duration, 0, true);
+            log($"SOUNDBOARD LISTEN COMPLETE — {duration:0.000}s");
+        }
+    }
+
+    public void SetSoundboardPhrases(IEnumerable<string> phrases)
+    {
+        lock (sync)
+        {
+            soundboardPhrases.Clear();
+            foreach (var phrase in phrases)
+            {
+                var normalized = Normalize(phrase);
+                if (!string.IsNullOrWhiteSpace(normalized))
+                    soundboardPhrases.Add(normalized);
+            }
+            lastSoundboardTrigger.Clear();
+        }
+    }
+
+    public void SetSoundboardAliases(IDictionary<string, string> aliases)
+    {
+        lock (sync)
+        {
+            soundboardAliases.Clear();
+            foreach (var pair in aliases)
+            {
+                var alias = Normalize(pair.Key);
+                var target = Normalize(pair.Value);
+                if (!string.IsNullOrWhiteSpace(alias) && !string.IsNullOrWhiteSpace(target))
+                    soundboardAliases[alias] = target;
+            }
+            lastSoundboardTrigger.Clear();
+        }
     }
 
     public void SetOutputCursorProvider(Func<double>? provider)
@@ -320,14 +467,14 @@ public sealed class SpeechDetector : IAsyncDisposable
         }
     }
 
-    private void EnqueueWindow(byte[] pcm, double absoluteStart, double duration, long segmentId)
+    private void EnqueueWindow(byte[] pcm, double absoluteStart, double duration, long segmentId, bool soundboardListen = false)
     {
         lock (workQueueSync)
         {
             // Newest-first scheduling keeps the detector focused on audio that
             // is closest to the 3-second output boundary. Older overlapping
             // windows remain available for consensus/deduplication.
-            workQueue.Add(new RecognitionWindow(pcm, absoluteStart, duration, segmentId));
+            workQueue.Add(new RecognitionWindow(pcm, absoluteStart, duration, segmentId, soundboardListen));
         }
         segmentPending.TryGetValue(segmentId, out var pending);
         segmentPending[segmentId] = pending + 1;
@@ -490,6 +637,7 @@ public sealed class SpeechDetector : IAsyncDisposable
             int queueDepthAtStart = queueDepthAtDispatch;
             using var wav = Build16kMonoWav(window.Pcm48k);
             wav.Position = 0;
+            bool listenOnly = window.IsSoundboardListen;
 
             lock (audioWindowSync)
             {
@@ -500,7 +648,7 @@ public sealed class SpeechDetector : IAsyncDisposable
 
             var vad = AnalyzeSpeechActivity(window.Pcm48k);
 
-            if (!vad.IsSpeech)
+            if (!vad.IsSpeech && !listenOnly)
             {
                 log(
                     $"VAD @ {window.AbsoluteStart:0.000}s: " +
@@ -533,9 +681,12 @@ public sealed class SpeechDetector : IAsyncDisposable
             if (recognized.Count == 0)
             {
                 log($"Recognition window @ {window.AbsoluteStart:0.000}s produced no speech.");
+                if (listenOnly)
+                    soundboardListenNoMatch?.Invoke();
                 return;
             }
 
+            bool listenMatched = false;
             foreach (var phrase in recognized)
             {
                 // Dedicated user-facing transcription event. MainForm filters
@@ -543,12 +694,32 @@ public sealed class SpeechDetector : IAsyncDisposable
                 // is visible in the scrollable log for alias discovery.
                 log($"HEARD: {phrase}");
 
-                CheckForCandidates(phrase, window);
+                if (listenOnly)
+                {
+                    listenMatched |= CheckForSoundboardListenTrigger(phrase);
+                }
+                else
+                {
+                    CheckForSoundboardTriggers(phrase, window);
+                    CheckForCandidates(phrase, window);
+                }
             }
+
+            if (listenOnly && !listenMatched)
+                soundboardListenNoMatch?.Invoke();
         }
         catch (Exception ex)
         {
             log("Speech recognition error: " + ex.Message);
+            if (window.IsSoundboardListen)
+            {
+                lock (sync)
+                {
+                    soundboardListenActive = false;
+                    soundboardListenPcm.Clear();
+                }
+                try { soundboardListenNoMatch?.Invoke(); } catch { }
+            }
         }
         finally
         {
@@ -707,6 +878,64 @@ public sealed class SpeechDetector : IAsyncDisposable
         }
     }
 
+
+    private List<string> FindSoundboardMatches(string normalizedPhrase)
+    {
+        lock (sync)
+        {
+            var matches = soundboardPhrases
+                .Where(trigger => Regex.IsMatch(normalizedPhrase, $"(?<!\\w){Regex.Escape(trigger)}(?!\\w)", RegexOptions.IgnoreCase))
+                .ToList();
+
+            foreach (var pair in soundboardAliases)
+            {
+                if (Regex.IsMatch(normalizedPhrase, $"(?<!\\w){Regex.Escape(pair.Key)}(?!\\w)", RegexOptions.IgnoreCase))
+                    matches.Add(pair.Value);
+            }
+
+            return matches.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    private bool CheckForSoundboardListenTrigger(string phrase)
+    {
+        var matches = FindSoundboardMatches(Normalize(phrase));
+        foreach (var trigger in matches)
+        {
+            log($"SOUNDBOARD PHRASE RECOGNIZED — \"{trigger}\"");
+            try { soundboardListenRecognized?.Invoke(trigger); }
+            catch (Exception ex) { log($"Soundboard listen callback error: {ex.Message}"); }
+            return true;
+        }
+        return false;
+    }
+
+    private void CheckForSoundboardTriggers(string phrase, RecognitionWindow window)
+    {
+        var matches = FindSoundboardMatches(Normalize(phrase));
+        if (matches.Count == 0) return;
+
+        foreach (var trigger in matches)
+        {
+            double now = window.AbsoluteStart;
+            bool allow;
+            lock (sync)
+            {
+                allow = !lastSoundboardTrigger.TryGetValue(trigger, out var last) || now - last >= 0.8;
+                if (allow) lastSoundboardTrigger[trigger] = now;
+            }
+            if (!allow) continue;
+
+            var acoustic = AnalyzeWindowAudio(window);
+            double start = acoustic.Duration > 0.70 ? window.AbsoluteStart : acoustic.Start;
+            double end = acoustic.Duration > 0.70 ? window.AbsoluteStart + window.Duration : acoustic.End;
+            if (end <= start) { start = window.AbsoluteStart; end = window.AbsoluteStart + window.Duration; }
+
+            log($"SOUNDBOARD TRIGGER — \"{trigger}\" | PCM={start:0.000}s→{end:0.000}s");
+            try { soundboardRequested?.Invoke(start, end, trigger); }
+            catch (Exception ex) { log($"Soundboard callback error: {ex.Message}"); }
+        }
+    }
     private void CheckForCandidates(string phrase, RecognitionWindow window)
     {
         List<string> matches;
@@ -1206,6 +1435,9 @@ public sealed class SpeechDetector : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         cts.Cancel();
+        soundboardListenTimeoutCts?.Cancel();
+        soundboardListenTimeoutCts?.Dispose();
+        soundboardListenTimeoutCts = null;
 
         try
         {
@@ -1233,5 +1465,5 @@ public sealed class SpeechDetector : IAsyncDisposable
         factory = null;
     }
 
-    private sealed record RecognitionWindow(byte[] Pcm48k, double AbsoluteStart, double Duration, long SegmentId);
+    private sealed record RecognitionWindow(byte[] Pcm48k, double AbsoluteStart, double Duration, long SegmentId, bool IsSoundboardListen = false);
 }

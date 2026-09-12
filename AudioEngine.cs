@@ -25,6 +25,8 @@ public sealed class AudioEngine : IDisposable
     private readonly Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver;
     private readonly Func<string, double>? replacementVolumeResolver;
     private readonly Func<double>? outputVolumeResolver;
+    private readonly Func<string, double>? soundboardVolumeResolver;
+    private readonly Func<string, string?>? soundboardSoundResolver;
 
     private WaveInEvent? capture;
     private WaveOutEvent? output;
@@ -40,6 +42,7 @@ public sealed class AudioEngine : IDisposable
     private bool draining;
     private double drainTargetSeconds;
     private bool stopped;
+    private bool soundboardListening;
     private long capturePackets;
     private long captureBytes;
     private double capturePcmSeconds;
@@ -48,7 +51,7 @@ public sealed class AudioEngine : IDisposable
     private const int Channels = 1;
     private const int Bits = 16;
     private const int BytesPerSecond = SampleRate * Channels * Bits / 8;
-    private const double MaxReplacementDurationSeconds = 5.0;
+    private const double MaxReplacementDurationSeconds = 5.0; // profanity replacements only
 
     public AudioEngine(
         int inputDevice, int outputDevice, double delaySeconds, Action<string> status,
@@ -58,7 +61,8 @@ public sealed class AudioEngine : IDisposable
         Func<double>? analysisSafeThroughSeconds = null, Func<string, string?>? replacementSoundResolver = null,
         Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver = null,
         Func<string, double>? replacementVolumeResolver = null,
-        Func<double>? outputVolumeResolver = null)
+        Func<double>? outputVolumeResolver = null, Func<string, string?>? soundboardSoundResolver = null,
+        Func<string, double>? soundboardVolumeResolver = null)
     {
         this.inputDevice = inputDevice; this.outputDevice = outputDevice; this.delaySeconds = delaySeconds;
         this.status = status; this.analysisAudio = analysisAudio;
@@ -69,10 +73,39 @@ public sealed class AudioEngine : IDisposable
         this.replacementPlaybackResolver = replacementPlaybackResolver;
         this.replacementVolumeResolver = replacementVolumeResolver;
         this.outputVolumeResolver = outputVolumeResolver;
+        this.soundboardSoundResolver = soundboardSoundResolver;
+        this.soundboardVolumeResolver = soundboardVolumeResolver;
         this.log = logCallback ?? (_ => { });
     }
 
     public double CurrentSourceSeconds => switcher?.CurrentSourceSeconds ?? 0.0;
+    public double CapturePcmSeconds => capturePcmSeconds;
+    public double DelaySeconds => delaySeconds;
+
+
+    public bool SetSoundboardListening(bool enabled)
+    {
+        lock (stateLock)
+        {
+            soundboardListening = enabled && !stopped && !ptt && !delayedMode;
+            return soundboardListening;
+        }
+    }
+
+    public double TriggerSoundboardNow(string phrase)
+    {
+        var soundPath = soundboardSoundResolver?.Invoke(phrase);
+        if (string.IsNullOrWhiteSpace(soundPath) || !File.Exists(soundPath))
+            return 0.0;
+
+        double start = CapturePcmSeconds + 0.020;
+        double duration = GetAudioDurationSeconds(soundPath);
+        if (duration <= 0.0)
+            return 0.0;
+
+        AddSoundboardRegion(start, start + 0.050, phrase, soundPath);
+        return duration;
+    }
 
     public void SetOutputVolume(double volume)
     {
@@ -84,7 +117,7 @@ public sealed class AudioEngine : IDisposable
         var format = new WaveFormat(SampleRate, Bits, Channels);
         delayed = new BufferedWaveProvider(format)
         {
-            BufferLength = BytesPerSecond * 15,
+            BufferLength = BytesPerSecond * 30,
             DiscardOnBufferOverflow = false,
             ReadFully = false
         };
@@ -105,7 +138,7 @@ public sealed class AudioEngine : IDisposable
 
         switcher = new SwitchProvider(
             format, delayed, live, FinishDrain, GetState, () => delaySeconds, () => capturePcmSeconds, () => drainTargetSeconds, GetReplacementDrainTargetSeconds,
-            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver);
+            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver, soundboardVolumeResolver);
 
         output = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 80, NumberOfBuffers = 3 };
         output.Init(switcher);
@@ -136,6 +169,15 @@ public sealed class AudioEngine : IDisposable
             if (ptt)
             {
                 delayed.AddSamples(e.Buffer, 0, e.BytesRecorded);
+                var copy = new byte[e.BytesRecorded];
+                Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
+                analysisAudio(copy, copy.Length, packetStartSeconds);
+            }
+            else if (soundboardListening && !delayedMode)
+            {
+                // Soundboard phrase listening is private: keep normal live
+                // passthrough active, but feed the microphone to the dedicated
+                // phrase recognizer without entering the delayed/PTT path.
                 var copy = new byte[e.BytesRecorded];
                 Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
                 analysisAudio(copy, copy.Length, packetStartSeconds);
@@ -189,7 +231,7 @@ public sealed class AudioEngine : IDisposable
                     ? Math.Max(0.0, coreEnd - coreStart)
                     : Math.Clamp(settings.DurationSeconds, 0.1, MaxReplacementDurationSeconds);
                 double replacementEnd = coreStart + duration;
-                censorRegions.Add(new CensorRegion(start, end, coreStart, replacementEnd, word, replacementSoundPath));
+                censorRegions.Add(new CensorRegion(start, end, coreStart, replacementEnd, word, replacementSoundPath, false));
             }
             else
             {
@@ -203,7 +245,7 @@ public sealed class AudioEngine : IDisposable
                     end = Math.Max(end, r.EndSeconds);
                     censorRegions.Remove(r);
                 }
-                censorRegions.Add(new CensorRegion(start, end, coreStart, coreStart, word, null));
+                censorRegions.Add(new CensorRegion(start, end, coreStart, coreStart, word, null, false));
             }
             censorRegions.Sort((a,b) => a.StartSeconds.CompareTo(b.StartSeconds));
             log($"CENSOR SCHEDULED — {word} PCM={start:0.000}s→{end:0.000}s | outputCursor={outputCursor:0.000}s" +
@@ -225,6 +267,47 @@ public sealed class AudioEngine : IDisposable
         lock (censorLock) return censorRegions.Any(r => sourceSeconds >= r.StartSeconds && sourceSeconds < Math.Max(r.EndSeconds, r.ReplacementEndSeconds));
     }
 
+    public void AddSoundboardRegion(double startSeconds, double endSeconds, string phrase, string soundPath)
+    {
+        if (endSeconds <= startSeconds || string.IsNullOrWhiteSpace(soundPath)) return;
+        lock (censorLock)
+        {
+            const double censorPreRollSeconds = 0.060;
+            const double censorPostRollSeconds = 0.300;
+            double coreStart = Math.Max(0, startSeconds);
+            double coreEnd = Math.Max(coreStart, endSeconds);
+            startSeconds = Math.Max(0, coreStart - censorPreRollSeconds);
+            endSeconds = coreEnd + censorPostRollSeconds;
+            double outputCursor = switcher?.CurrentSourceSeconds ?? 0.0;
+            if (endSeconds <= outputCursor) { log($"SOUNDBOARD MISSED — {phrase} already passed."); return; }
+            double clipDuration = GetAudioDurationSeconds(soundPath);
+            if (clipDuration <= 0) return;
+            censorRegions.Add(new CensorRegion(startSeconds, endSeconds, coreStart, coreStart + clipDuration, phrase, soundPath, true));
+            if (delayed != null)
+            {
+                long required = (long)Math.Ceiling((clipDuration + delaySeconds + 5.0) * BytesPerSecond);
+                required = Math.Clamp(required, BytesPerSecond * 30L, BytesPerSecond * 300L);
+                delayed.BufferLength = (int)Math.Min(int.MaxValue, Math.Max(delayed.BufferLength, required));
+                var currentState = GetState();
+                if (currentState.draining)
+                {
+                    long silenceBytes = Math.Min(BytesPerSecond * 300L, (long)Math.Ceiling((clipDuration + 0.5) * BytesPerSecond));
+                    silenceBytes -= silenceBytes % 2;
+                    if (silenceBytes > 0) delayed.AddSamples(new byte[(int)Math.Min(int.MaxValue - 1L, silenceBytes)], 0, (int)Math.Min(int.MaxValue - 1L, silenceBytes));
+                }
+            }
+            censorRegions.Sort((a,b) => a.StartSeconds.CompareTo(b.StartSeconds));
+            log($"SOUNDBOARD SCHEDULED — {phrase} | sound={Path.GetFileName(soundPath)} | duration={clipDuration:0.000}s");
+            status($"SOUNDBOARD — {phrase}");
+        }
+    }
+
+    private static double GetAudioDurationSeconds(string path)
+    {
+        try { using var reader = new WaveFileReader(path); return reader.TotalTime.TotalSeconds; }
+        catch { return 0; }
+    }
+
     public void SetPtt(bool down)
     {
         lock (stateLock)
@@ -233,6 +316,10 @@ public sealed class AudioEngine : IDisposable
 
             if (down && !ptt)
             {
+                // A real PTT transmission always owns the analysis path.
+                // Soundboard phrase listening must be released before PTT starts.
+                soundboardListening = false;
+
                 // Start a fresh delayed PTT segment. The output cursor begins
                 // delaySeconds behind the current capture clock, so the first
                 // PTT audio reaches the output only after the configured delay.
@@ -266,12 +353,17 @@ public sealed class AudioEngine : IDisposable
                 delayedMode = true;
                 drainTargetSeconds = capturePcmSeconds;
 
-                // Keep enough silent PCM queued after PTT release for a custom
-                // replacement sound to finish even when it extends past the
-                // captured speech. The actual drain target remains dynamic and
-                // only extends when a replacement event requires it.
-                int replacementTailBytes = (int)Math.Round(
-                    MaxReplacementDurationSeconds * BytesPerSecond);
+                // Queue enough silence for replacement/soundboard effects that
+                // extend beyond the captured PTT timeline. Soundboard clips are
+                // intentionally not limited to the legacy 5-second replacement cap.
+                double tailSeconds = GetReplacementDrainTargetSeconds() - capturePcmSeconds;
+                // Do not hold the PTT/delayed timeline for the legacy 5-second
+                // replacement limit when there is no effect that actually needs it.
+                // The drain target itself already accounts for long soundboard clips.
+                tailSeconds = Math.Max(0.25, tailSeconds + 0.25);
+                long tailBytesLong = (long)Math.Ceiling(tailSeconds * BytesPerSecond);
+                tailBytesLong = Math.Min(tailBytesLong, BytesPerSecond * 300L);
+                int replacementTailBytes = (int)Math.Min(int.MaxValue - 1L, tailBytesLong);
                 replacementTailBytes -= replacementTailBytes % 2;
                 if (replacementTailBytes > 0)
                     delayed?.AddSamples(new byte[replacementTailBytes], 0, replacementTailBytes);
@@ -315,7 +407,7 @@ public sealed class AudioEngine : IDisposable
 
     public void Stop()
     {
-        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; }
+        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; soundboardListening=false; }
         try { capture?.StopRecording(); } catch { }
         try { output?.Stop(); } catch { }
         delayed?.ClearBuffer();
@@ -338,9 +430,10 @@ public sealed class AudioEngine : IDisposable
         public double ReplacementEndSeconds {get;}
         public string Word {get;}
         public string? ReplacementSoundPath {get;}
-        public CensorRegion(double start, double end, double effectStart, double replacementEnd, string word, string? sound)
+        public bool IsSoundboard { get; }
+        public CensorRegion(double start, double end, double effectStart, double replacementEnd, string word, string? sound, bool isSoundboard = false)
         {
-            StartSeconds=start; EndSeconds=end; EffectStartSeconds=effectStart; ReplacementEndSeconds=replacementEnd; Word=word; ReplacementSoundPath=sound;
+            StartSeconds=start; EndSeconds=end; EffectStartSeconds=effectStart; ReplacementEndSeconds=replacementEnd; Word=word; ReplacementSoundPath=sound; IsSoundboard=isSoundboard;
         }
     }
 
@@ -362,19 +455,22 @@ public sealed class AudioEngine : IDisposable
         private readonly Action<string> log;
         private readonly Func<string, double>? replacementVolumeResolver;
         private readonly Func<double>? outputVolumeResolver;
+        private readonly Func<string, double>? soundboardVolumeResolver;
+    private readonly Func<string, string?>? soundboardSoundResolver;
         private double outputVolume = 1.0;
         private double sourceReadSeconds;
         private double lastOutputLogSecond=-1;
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string,byte[]> soundboardCache=new(StringComparer.OrdinalIgnoreCase);
 
         public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, BufferedWaveProvider live,
             Action finishDrain, Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds, Func<double> getDrainTargetSeconds, Func<double> getReplacementDrainTargetSeconds,
             Func<double,bool> isCensored, Func<double,double,List<CensorRegion>> getCensorRegions,
-            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver)
+            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver, Func<string, double>? soundboardVolumeResolver)
         {
             this.format=format; this.delayed=delayed; this.live=live; this.finishDrain=finishDrain; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds; this.getDrainTargetSeconds=getDrainTargetSeconds; this.getReplacementDrainTargetSeconds=getReplacementDrainTargetSeconds;
             this.isCensored=isCensored; this.getCensorRegions=getCensorRegions; this.getCensorRegion=getCensorRegion;
-            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver;
+            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver; this.soundboardVolumeResolver=soundboardVolumeResolver;
             outputVolume = Math.Clamp(outputVolumeResolver?.Invoke() ?? 1.0, 0.0, 1.5);
         }
         public WaveFormat WaveFormat=>format;
@@ -392,8 +488,9 @@ public sealed class AudioEngine : IDisposable
             for (int i = offset; i < end; i += 2)
             {
                 short sample = (short)(buffer[i] | (buffer[i + 1] << 8));
-                int scaled = (int)Math.Round(sample * volume);
-                scaled = Math.Clamp(scaled, short.MinValue, short.MaxValue);
+                double normalized = sample / 32768.0;
+                double processed = volume <= 1.0 ? normalized * volume : Math.Tanh(normalized * volume) / Math.Tanh(volume);
+                int scaled = (int)Math.Round(Math.Clamp(processed, -1.0, 1.0) * 32767.0);
                 buffer[i] = (byte)(scaled & 0xFF);
                 buffer[i + 1] = (byte)((scaled >> 8) & 0xFF);
             }
@@ -457,10 +554,11 @@ public sealed class AudioEngine : IDisposable
             foreach(var region in activeRegions)
             {
                 if(string.IsNullOrWhiteSpace(region.ReplacementSoundPath)) continue;
-                if(!replacementCache.TryGetValue(region.ReplacementSoundPath, out var pcm))
+                var cache = region.IsSoundboard ? soundboardCache : replacementCache;
+                if(!cache.TryGetValue(region.ReplacementSoundPath, out var pcm))
                 {
-                    pcm=LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
-                    replacementCache[region.ReplacementSoundPath]=pcm;
+                    pcm = region.IsSoundboard ? LoadSoundboardAsOutputPcm(region.ReplacementSoundPath) : LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
+                    cache[region.ReplacementSoundPath]=pcm;
                 }
                 if(pcm.Length==0) continue;
 
@@ -492,10 +590,11 @@ public sealed class AudioEngine : IDisposable
 
             try
             {
-                if (!replacementCache.TryGetValue(region.ReplacementSoundPath, out var pcm))
+                var cache = region.IsSoundboard ? soundboardCache : replacementCache;
+                if (!cache.TryGetValue(region.ReplacementSoundPath, out var pcm))
                 {
-                    pcm = LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
-                    replacementCache[region.ReplacementSoundPath] = pcm;
+                    pcm = region.IsSoundboard ? LoadSoundboardAsOutputPcm(region.ReplacementSoundPath) : LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
+                    cache[region.ReplacementSoundPath] = pcm;
                 }
 
                 if (pcm.Length == 0)
@@ -531,10 +630,13 @@ public sealed class AudioEngine : IDisposable
 
             try
             {
-                if (!replacementCache.TryGetValue(region.ReplacementSoundPath, out var pcm))
+                var cache = region.IsSoundboard ? soundboardCache : replacementCache;
+                if (!cache.TryGetValue(region.ReplacementSoundPath, out var pcm))
                 {
-                    pcm = LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
-                    replacementCache[region.ReplacementSoundPath] = pcm;
+                    pcm = region.IsSoundboard
+                        ? LoadSoundboardAsOutputPcm(region.ReplacementSoundPath)
+                        : LoadReplacementAsOutputPcm(region.ReplacementSoundPath);
+                    cache[region.ReplacementSoundPath] = pcm;
                 }
 
                 if (pcm.Length == 0)
@@ -552,14 +654,16 @@ public sealed class AudioEngine : IDisposable
 
                 Buffer.BlockCopy(pcm, sourceByte, buffer, destinationOffset, copyBytes);
 
-                double volume = Math.Clamp(replacementVolumeResolver?.Invoke(region.Word) ?? 1.0, 0.0, 1.5);
+                double volume = Math.Clamp((region.IsSoundboard ? soundboardVolumeResolver?.Invoke(region.Word) : replacementVolumeResolver?.Invoke(region.Word)) ?? 1.0, 0.0, 1.5);
                 if (Math.Abs(volume - 1.0) > 0.0001)
                 {
                     int end = destinationOffset + copyBytes;
                     for (int i = destinationOffset; i < end; i += 2)
                     {
                         short sample = (short)(buffer[i] | (buffer[i + 1] << 8));
-                        int scaled = Math.Clamp((int)Math.Round(sample * volume), short.MinValue, short.MaxValue);
+                        double normalized = sample / 32768.0;
+                        double processed = volume <= 1.0 ? normalized * volume : Math.Tanh(normalized * volume) / Math.Tanh(volume);
+                        int scaled = (int)Math.Round(Math.Clamp(processed, -1.0, 1.0) * 32767.0);
                         buffer[i] = (byte)(scaled & 0xFF);
                         buffer[i + 1] = (byte)((scaled >> 8) & 0xFF);
                     }
@@ -582,6 +686,76 @@ public sealed class AudioEngine : IDisposable
         // Converts common WAV formats to the exact VoiceGuard output format:
         // 48kHz / mono / 16-bit PCM.  This means users do NOT have to pre-convert
         // their replacement sounds before assigning them to a blocked word.
+        private byte[] LoadSoundboardAsOutputPcm(string path)
+        {
+            // Soundboard clips have NO five-second limit. This loader is deliberately
+            // separate from the profanity replacement loader, which retains its 5s cap.
+            using var reader = new WaveFileReader(path);
+            var wf = reader.WaveFormat;
+            if (wf.Encoding != WaveFormatEncoding.Pcm && wf.Encoding != WaveFormatEncoding.IeeeFloat)
+            {
+                log($"SOUNDBOARD SOUND REJECTED — {Path.GetFileName(path)} encoding={wf.Encoding}");
+                return Array.Empty<byte>();
+            }
+
+            if (wf.SampleRate == 48000 && wf.Channels == 1 && wf.BitsPerSample == 16 && wf.Encoding == WaveFormatEncoding.Pcm)
+            {
+                using var ms = new MemoryStream();
+                reader.CopyTo(ms);
+                var pcm = ms.ToArray();
+                log($"SOUNDBOARD SOUND LOADED — {Path.GetFileName(path)} | {pcm.Length / (double)BytesPerSecond:0.000}s | full file");
+                return pcm;
+            }
+
+            int bytesPerInputSample = wf.BitsPerSample / 8;
+            int frameBytes = bytesPerInputSample * wf.Channels;
+            if (bytesPerInputSample <= 0 || frameBytes <= 0 || wf.SampleRate <= 0)
+                return Array.Empty<byte>();
+
+            long totalFramesLong = reader.Length / frameBytes;
+            if (totalFramesLong <= 0 || totalFramesLong > int.MaxValue)
+                return Array.Empty<byte>();
+
+            int inputFrames = (int)totalFramesLong;
+            var mono = new float[inputFrames];
+            byte[] raw = new byte[inputFrames * frameBytes];
+            int rawRead = 0;
+            while (rawRead < raw.Length)
+            {
+                int n = reader.Read(raw, rawRead, raw.Length - rawRead);
+                if (n <= 0) break;
+                rawRead += n;
+            }
+            inputFrames = Math.Min(inputFrames, rawRead / frameBytes);
+            if (inputFrames <= 0) return Array.Empty<byte>();
+
+            for (int frame = 0; frame < inputFrames; frame++)
+            {
+                int frameOffset = frame * frameBytes;
+                double sum = 0;
+                for (int ch = 0; ch < wf.Channels; ch++)
+                    sum += DecodeReplacementSample(raw, frameOffset + ch * bytesPerInputSample, wf.BitsPerSample, wf.Encoding);
+                mono[frame] = Math.Clamp((float)(sum / wf.Channels), -1f, 1f);
+            }
+
+            int outputFrames = Math.Max(1, (int)Math.Round(inputFrames * (48000.0 / wf.SampleRate)));
+            byte[] output = new byte[outputFrames * 2];
+            double ratio = wf.SampleRate / 48000.0;
+            for (int i = 0; i < outputFrames; i++)
+            {
+                double src = i * ratio;
+                int i0 = Math.Clamp((int)Math.Floor(src), 0, mono.Length - 1);
+                int i1 = Math.Min(i0 + 1, mono.Length - 1);
+                float frac = (float)(src - Math.Floor(src));
+                float sample = mono[i0] + (mono[i1] - mono[i0]) * frac;
+                short pcm16 = (short)Math.Clamp((int)Math.Round(sample * 32767.0), short.MinValue, short.MaxValue);
+                output[i * 2] = (byte)(pcm16 & 0xFF);
+                output[i * 2 + 1] = (byte)((pcm16 >> 8) & 0xFF);
+            }
+            log($"SOUNDBOARD SOUND LOADED — {Path.GetFileName(path)} | {outputFrames / 48000.0:0.000}s | full file");
+            return output;
+        }
+
         private byte[] LoadReplacementAsOutputPcm(string path)
         {
             using var reader = new WaveFileReader(path);

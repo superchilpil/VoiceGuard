@@ -15,6 +15,17 @@ internal static class Program
     [STAThread]
     static void Main()
     {
+        DiagnosticLogger.StartSession();
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+                DiagnosticLogger.WriteException("UNHANDLED EXCEPTION", ex);
+            else
+                DiagnosticLogger.Write("UNHANDLED EXCEPTION", e.ExceptionObject?.ToString() ?? "Unknown exception");
+        };
+        Application.ThreadException += (_, e) =>
+            DiagnosticLogger.WriteException("UI THREAD EXCEPTION", e.Exception);
+
         bool createdNew;
         try
         {
@@ -45,7 +56,7 @@ internal static class Program
         // Give Windows a NEW, stable identity for this revision. This prevents
         // the shell/taskbar from treating the application as the old pinned
         // VoiceGuard executable and reusing its cached icon.
-        _ = SetCurrentProcessExplicitAppUserModelID("JackTheGooner.VoiceGuard.6.6.4");
+        _ = SetCurrentProcessExplicitAppUserModelID("JackTheGooner.VoiceGuard.6.6.5");
 
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());

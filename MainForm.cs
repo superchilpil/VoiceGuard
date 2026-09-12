@@ -6,6 +6,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Win32;
 using System.Windows.Forms;
 using NAudio.Wave;
@@ -41,6 +42,23 @@ public sealed class MainForm : Form
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, double> replacementVolumes =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> soundboardSounds =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> soundboardVolumes =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<string>> soundboardAliases =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly ListBox soundboard = new();
+    private readonly Button addSoundboard = new();
+    private readonly Button removeSoundboard = new();
+    private readonly Button listenSoundboard = new();
+    private bool soundboardListenInProgress;
+    private readonly TextBox soundboardListenKey = new();
+    private Thread? soundboardListenKeyThread;
+    private CancellationTokenSource? soundboardListenKeyCts;
+    private int soundboardListenVirtualKey = (int)Keys.OemPeriod;
+    private int soundboardListenKeyDown;
+    private readonly Button editSoundboard = new();
     private readonly TrackBar outputVolume = new();
     private readonly Label outputVolumeValue = new();
     private bool draggingReplacementVolume;
@@ -76,6 +94,9 @@ public sealed class MainForm : Form
     private static extern int SetWindowTheme(IntPtr hWnd, string? pszSubAppName, string? pszSubIdList);
 
     [DllImport("user32.dll", SetLastError = true)]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -106,6 +127,9 @@ public sealed class MainForm : Form
         public Dictionary<string, string?> ReplacementSounds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, ReplacementPlaybackSettings> ReplacementPlayback { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public Dictionary<string, double> ReplacementVolumes { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, SoundboardEntryConfig> SoundboardPhrases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<string>> SoundboardAliases { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public string SoundboardListenKey { get; set; } = Keys.OemPeriod.ToString();
         public decimal OutputVolumePercent { get; set; } = 100M;
         public decimal DelaySeconds { get; set; } = 3M;
         public string PttKey { get; set; } = Keys.Z.ToString();
@@ -114,6 +138,12 @@ public sealed class MainForm : Form
         public bool StartWithWindows { get; set; }
         public bool MinimizeToTray { get; set; }
         public string StartStopHotkey { get; set; } = "Control, Alt, V";
+    }
+
+    private sealed class SoundboardEntryConfig
+    {
+        public string SoundPath { get; set; } = "";
+        public double Volume { get; set; } = 1.0;
     }
 
     private void ApplyWindowAndTaskbarIcon()
@@ -144,10 +174,11 @@ public sealed class MainForm : Form
     {
         ApplyWindowAndTaskbarIcon();
 
-        Text = "VoiceGuard — Stage 6.6.4";
-        Width = 1180;
-        Height = 720;
+        Text = "VoiceGuard — Stage 6.6.5";
+        Width = 1600;
+        Height = 900;
         MinimumSize = new Size(1000, 620);
+        WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
         BackColor = Bg;
@@ -191,7 +222,7 @@ public sealed class MainForm : Form
 
         header.Controls.Add(new Label
         {
-            Text = "VOICE CHAT PROFANITY FILTER  •  LOCAL PROCESSING",
+            Text = "VOICE CHAT PROFANITY FILTER  -  SOUNDBOARD",
             AutoSize = true,
             Location = new Point(70, 39),
             ForeColor = AccentBright,
@@ -206,24 +237,32 @@ public sealed class MainForm : Form
         };
         header.Controls.Add(headerLine);
 
-        // The three-column working area is confined to row 2 of root.
+        // The four-section working area is confined to row 2 of root.
+        var mainHost = new Panel
+        { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Bg, Padding = new Padding(0) };
+        root.Controls.Add(mainHost, 0, 1);
+
         var main = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 3,
+            Location = new Point(0, 0),
+            Width = 1680,
+            Height = 1,
+            AutoSize = false,
+            ColumnCount = 4,
             RowCount = 1,
             Padding = new Padding(18, 14, 18, 18),
             Margin = new Padding(0),
             BackColor = Bg
         };
-        // Fixed semantic layout:
-        //   0 = controls
-        //   1 = blocked words
-        //   2 = logs (RIGHT)
+        // Four primary sections: controls, blocked words, soundboard phrases, logs.
+        // The host is horizontally scrollable whenever the window is narrower than
+        // the complete working surface. Maximized mode normally shows the full layout.
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 62));
-        root.Controls.Add(main, 0, 1);
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 510));
+        mainHost.Controls.Add(main);
+        mainHost.Resize += (_, _) => main.Height = Math.Max(1, mainHost.ClientSize.Height);
 
         // LEFT: controls are explicitly arranged top-to-bottom in the
         // requested order instead of relying on DockStyle.Top z-order.
@@ -231,7 +270,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 14,
+            RowCount = 16,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -248,8 +287,9 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 34)); // settings heading
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // delay
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // ptt
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 82)); // startup/tray/hotkey
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // mode
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // soundboard listen key
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // start/stop hotkey
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); // mode
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
         main.Controls.Add(left, 0, 0);
@@ -312,47 +352,91 @@ public sealed class MainForm : Form
         left.Controls.Add(MakeSectionTitle("SETTINGS"), 0, 7);
 
         var delayPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        delayPanel.Controls.Add(MakeFieldLabel("Delay"));
-        delay.Dock = DockStyle.Bottom;
-        delay.Height = 28;
+        var delayLabel = MakeFieldLabel("Delay");
+        delayLabel.Dock = DockStyle.Top;
+        delayLabel.Height = 24;
+        delayPanel.Controls.Add(delayLabel);
+        var delayBox = MakeInputBox(delay, 70);
+        delayBox.Location = new Point(0, 24);
+        delayPanel.Controls.Add(delayBox);
+        delayBox.BringToFront();
         delay.Minimum = 2;
         delay.Maximum = 5;
         delay.DecimalPlaces = 1;
-        StyleInput(delay);
         delay.Increment = 0.5M;
         delay.Value = 3;
-        delayPanel.Controls.Add(delay);
         left.Controls.Add(delayPanel, 0, 8);
 
         var pttPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        pttPanel.Controls.Add(MakeFieldLabel("PTT key"));
-        ptt.Dock = DockStyle.Bottom;
-        ptt.Height = 28;
+        var pttLabel = MakeFieldLabel("PTT key");
+        pttLabel.Dock = DockStyle.Top;
+        pttLabel.Height = 24;
+        pttPanel.Controls.Add(pttLabel);
+        var pttBox = MakeInputBox(ptt, 70);
+        pttBox.Location = new Point(0, 24);
+        pttPanel.Controls.Add(pttBox);
+        pttBox.BringToFront();
         ptt.Text = "Z";
-        StyleInput(ptt);
         ptt.Tag = Keys.Z;
         ptt.ReadOnly = true;
+        ptt.TextAlign = HorizontalAlignment.Center;
         ptt.KeyDown += (_, e) =>
         {
             ptt.Text = e.KeyCode.ToString();
             ptt.Tag = e.KeyCode;
             e.SuppressKeyPress = true;
+            SavePersistence();
         };
-        pttPanel.Controls.Add(ptt);
         left.Controls.Add(pttPanel, 0, 9);
+
+        var soundboardListenKeyPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var soundboardListenKeyLabel = MakeFieldLabel("Soundboard listen key");
+        soundboardListenKeyLabel.Dock = DockStyle.Top;
+        soundboardListenKeyLabel.Height = 24;
+        soundboardListenKeyPanel.Controls.Add(soundboardListenKeyLabel);
+        var soundboardKeyBox = MakeInputBox(soundboardListenKey, 70);
+        soundboardKeyBox.Location = new Point(0, 24);
+        soundboardListenKeyPanel.Controls.Add(soundboardKeyBox);
+        soundboardKeyBox.BringToFront();
+        soundboardListenKey.Text = ">";
+        soundboardListenKey.Tag = Keys.OemPeriod;
+        soundboardListenKey.TextAlign = HorizontalAlignment.Center;
+        soundboardListenKey.ReadOnly = true;
+        soundboardListenKey.KeyDown += (_, e) =>
+        {
+            soundboardListenKey.Tag = e.KeyCode;
+            soundboardListenVirtualKey = (int)e.KeyCode;
+            soundboardListenKey.Text = e.KeyCode == Keys.OemPeriod ? ">" : e.KeyCode.ToString();
+            e.SuppressKeyPress = true;
+            SavePersistence();
+        };
+        left.Controls.Add(soundboardListenKeyPanel, 0, 10);
+
+        var hotkeyPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
+        var hotkeyLabel = MakeFieldLabel("Start/Stop Hotkey");
+        hotkeyLabel.Dock = DockStyle.Top;
+        hotkeyLabel.Height = 24;
+        hotkeyPanel.Controls.Add(hotkeyLabel);
+        startStopHotkey.Dock = DockStyle.None;
+        startStopHotkey.Location = new Point(0, 24);
+        startStopHotkey.Width = 140;
+        startStopHotkey.Height = 28;
+        startStopHotkey.ReadOnly = true;
+        startStopHotkey.Text = "Ctrl + Alt + V";
+        startStopHotkey.Tag = Keys.Control | Keys.Alt | Keys.V;
+        StyleInput(startStopHotkey);
+        startStopHotkey.TextAlign = HorizontalAlignment.Center;
+        startStopHotkey.KeyDown += StartStopHotkey_KeyDown;
+        hotkeyPanel.Controls.Add(startStopHotkey);
+        left.Controls.Add(hotkeyPanel, 0, 11);
 
         var startupPanel = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            Margin = new Padding(0),
-            Padding = new Padding(0),
-            BackColor = Bg
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2,
+            Margin = new Padding(0), Padding = new Padding(0), BackColor = Bg
         };
         startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
 
         startWithWindows.Text = "Start with Windows";
         startWithWindows.AutoSize = true;
@@ -376,27 +460,11 @@ public sealed class MainForm : Form
         minimizeToTray.Margin = new Padding(0);
         minimizeToTray.CheckedChanged += (_, _) =>
         {
-            if (!loadingPersistence)
-                SavePersistence();
+            if (!loadingPersistence) SavePersistence();
         };
         startupPanel.Controls.Add(minimizeToTray, 0, 1);
 
-        var hotkeyPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        var hotkeyLabel = MakeFieldLabel("Start/Stop hotkey");
-        hotkeyLabel.Width = 120;
-        hotkeyPanel.Controls.Add(hotkeyLabel);
-        startStopHotkey.Dock = DockStyle.Right;
-        startStopHotkey.Width = 160;
-        startStopHotkey.ReadOnly = true;
-        startStopHotkey.Text = "Ctrl + Alt + V";
-        startStopHotkey.Tag = Keys.Control | Keys.Alt | Keys.V;
-        StyleInput(startStopHotkey);
-        startStopHotkey.TextAlign = HorizontalAlignment.Center;
-        startStopHotkey.KeyDown += StartStopHotkey_KeyDown;
-        hotkeyPanel.Controls.Add(startStopHotkey);
-        startupPanel.Controls.Add(hotkeyPanel, 0, 2);
-
-        left.Controls.Add(startupPanel, 0, 10);
+        left.Controls.Add(startupPanel, 0, 12);
 
         // A compact status area lives below the fixed controls if there is
         // room; it does not participate in the three primary control order.
@@ -406,15 +474,16 @@ public sealed class MainForm : Form
         status.Height = 44;
         status.ForeColor = TextDim;
         mode.Text = "MODE: STOPPED";
-        mode.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+        mode.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
         mode.AutoSize = false;
         mode.Dock = DockStyle.Fill;
-        mode.Height = 30;
+        mode.Height = 42;
+        mode.TextAlign = ContentAlignment.MiddleCenter;
         mode.Margin = new Padding(0);
-        left.Controls.Add(mode, 0, 11);
+        left.Controls.Add(mode, 0, 13);
         status.Dock = DockStyle.Fill;
         status.Margin = new Padding(0);
-        left.Controls.Add(status, 0, 12);
+        left.Controls.Add(status, 0, 14);
 
         var jackBrand = new PictureBox
         {
@@ -545,10 +614,73 @@ public sealed class MainForm : Form
         wordsMenu.Items.Add("Remove word", null, (_, _) => RemoveBlockedWord());
         words.ContextMenuStrip = wordsMenu;
 
-        // RIGHT COLUMN ONLY:
+        var soundboardPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
+            Margin = new Padding(0, 0, 7, 0), Padding = new Padding(8, 0, 7, 0), BackColor = Bg
+        };
+        soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        main.Controls.Add(soundboardPanel, 2, 0);
+
+        soundboardPanel.Controls.Add(new Label
+        { Text = "SOUNDBOARD PHRASES", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+          TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0) }, 0, 0);
+
+        soundboard.Dock = DockStyle.Fill;
+        soundboard.Margin = new Padding(0);
+        soundboard.SelectionMode = SelectionMode.One;
+        soundboard.BorderStyle = BorderStyle.FixedSingle;
+        soundboard.BackColor = Surface;
+        soundboard.ForeColor = TextMain;
+        soundboard.DrawMode = DrawMode.OwnerDrawFixed;
+        soundboard.ItemHeight = 88;
+        soundboard.IntegralHeight = false;
+        soundboard.HorizontalScrollbar = true;
+        soundboard.DrawItem += DrawSoundboardItem;
+        soundboard.DoubleClick += (_, _) => EditSelectedSoundboard();
+        var soundboardMenu = new ContextMenuStrip();
+        soundboardMenu.Items.Add("Add alias...", null, (_, _) => AddAliasToSelectedSoundboard());
+        soundboardMenu.Items.Add("Manage aliases...", null, (_, _) => ManageAliasesForSelectedSoundboard());
+        soundboardMenu.Items.Add("Replace / edit WAV...", null, (_, _) => EditSelectedSoundboard());
+        soundboard.ContextMenuStrip = soundboardMenu;
+        soundboard.MouseDown += SoundboardMouseDown;
+        soundboard.MouseMove += SoundboardMouseMove;
+        soundboard.MouseUp += SoundboardMouseUp;
+        soundboardPanel.Controls.Add(soundboard, 0, 1);
+        ApplyDarkScrollbarTheme(soundboard);
+
+        var soundboardBottom = new TableLayoutPanel
+        { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0, 4, 0, 0) };
+        soundboardBottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        soundboardBottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        soundboardPanel.Controls.Add(soundboardBottom, 0, 2);
+
+        var sbButtons = new TableLayoutPanel
+        { Dock = DockStyle.Fill, BackColor = Bg, ColumnCount = 6, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
+        sbButtons.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        sbButtons.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
+        sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 105));
+        sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+        sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+        sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 135));
+        sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 75));
+        sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65));
+        addSoundboard.Text = "Add phrase"; StyleButton(addSoundboard, false); addSoundboard.Margin = new Padding(0,0,6,2); addSoundboard.Click += (_,_) => AddSoundboardPhrase();
+        editSoundboard.Text = "Edit"; StyleButton(editSoundboard, false); editSoundboard.Margin = new Padding(0,0,6,2); editSoundboard.Click += (_,_) => EditSelectedSoundboard();
+        removeSoundboard.Text = "Remove"; StyleButton(removeSoundboard, false); removeSoundboard.Margin = new Padding(0,0,6,2); removeSoundboard.Click += (_,_) => RemoveSelectedSoundboard();
+        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => BeginSoundboardListenFromKey();
+        sbButtons.Controls.Add(addSoundboard,0,0); sbButtons.Controls.Add(editSoundboard,1,0); sbButtons.Controls.Add(removeSoundboard,2,0); sbButtons.Controls.Add(listenSoundboard,3,0);
+        soundboardBottom.Controls.Add(sbButtons,0,0);
+        soundboardBottom.Controls.Add(new Label
+        { Text = "Listen & Trigger captures a longer phrase privately, then holds your configured PTT key while the soundboard clip is transmitted.", Dock = DockStyle.Fill, ForeColor = TextDim, Padding = new Padding(0,4,0,0), Margin = new Padding(0) },0,1);
+
+        // RIGHT SIDE:
         // Column 0 = controls
         // Column 1 = blocked words
-        // Column 2 = LOGS
+        // Column 2 = soundboard phrases
+        // Column 3 = LOGS
         //
         // The log is deliberately hosted in its own right-column panel.
         // It is never added to the controls column or blocked-words column.
@@ -559,7 +691,7 @@ public sealed class MainForm : Form
             Padding = new Padding(8, 0, 0, 0),
             BackColor = Bg
         };
-        main.Controls.Add(logSection, 2, 0);
+        main.Controls.Add(logSection, 3, 0);
 
         var logTitle = new Label
         {
@@ -637,6 +769,30 @@ public sealed class MainForm : Form
         Padding = new Padding(0, 0, 0, 4),
         Margin = new Padding(0)
     };
+
+    private static Panel MakeInputBox(Control control, int width)
+    {
+        // Explicit bordered container.  Keep the editor itself inside the
+        // container so the compact Delay/PTT/Soundboard fields remain visibly
+        // configurable instead of looking like plain labels.
+        var box = new Panel
+        {
+            Width = width,
+            Height = 30,
+            BackColor = Border,
+            Padding = new Padding(1),
+            Anchor = AnchorStyles.Left | AnchorStyles.Top,
+            Margin = new Padding(0),
+            TabStop = false
+        };
+
+        control.Dock = DockStyle.Fill;
+        control.Margin = new Padding(0);
+        StyleInput(control);
+        box.Controls.Add(control);
+        box.BringToFront();
+        return box;
+    }
 
     private static void StyleInput(Control control)
     {
@@ -773,6 +929,10 @@ public sealed class MainForm : Form
             replacementSounds.Clear();
             replacementPlaybackSettings.Clear();
             replacementVolumes.Clear();
+            soundboardSounds.Clear();
+            soundboardVolumes.Clear();
+            soundboardAliases.Clear();
+            soundboard.Items.Clear();
 
             foreach (var word in config.BlockedWords
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -835,6 +995,16 @@ public sealed class MainForm : Form
                     replacementVolumes[actualWord] = Math.Clamp(pair.Value, 0.0, 1.5);
             }
 
+            foreach (var pair in config.SoundboardPhrases ?? new Dictionary<string, SoundboardEntryConfig>())
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value == null || string.IsNullOrWhiteSpace(pair.Value.SoundPath)) continue;
+                if (!File.Exists(pair.Value.SoundPath)) continue;
+                string trigger = pair.Key.Trim();
+                soundboardSounds[trigger] = pair.Value.SoundPath;
+                soundboardVolumes[trigger] = Math.Clamp(pair.Value.Volume, 0.0, 1.5);
+                soundboard.Items.Add(trigger);
+            }
+
             if (config.OutputVolumePercent >= 0 && config.OutputVolumePercent <= 150)
                 outputVolume.Value = (int)Math.Round(config.OutputVolumePercent);
             outputVolumeValue.Text = $"{outputVolume.Value}%";
@@ -847,6 +1017,13 @@ public sealed class MainForm : Form
                 ptt.Tag = savedKey;
                 ptt.Text = savedKey.ToString();
             }
+
+             if (Enum.TryParse<Keys>(config.SoundboardListenKey, true, out var savedListenKey))
+             {
+                 soundboardListenKey.Tag = savedListenKey;
+                 soundboardListenVirtualKey = (int)savedListenKey;
+                 soundboardListenKey.Text = savedListenKey == Keys.OemPeriod ? ">" : savedListenKey.ToString();
+             }
 
             loadedInputDeviceName = config.InputDevice;
             loadedOutputDeviceName = config.OutputDevice;
@@ -900,6 +1077,12 @@ public sealed class MainForm : Form
                     pair => pair.Key,
                     pair => pair.Value,
                     StringComparer.OrdinalIgnoreCase),
+                SoundboardPhrases = soundboardSounds.ToDictionary(
+                    pair => pair.Key,
+                    pair => new SoundboardEntryConfig { SoundPath = pair.Value, Volume = GetSoundboardVolume(pair.Key) },
+                    StringComparer.OrdinalIgnoreCase),
+                SoundboardAliases = soundboardAliases.ToDictionary(pair => pair.Key, pair => pair.Value.ToList(), StringComparer.OrdinalIgnoreCase),
+                SoundboardListenKey = (soundboardListenKey.Tag is Keys listenKey ? listenKey : Keys.OemPeriod).ToString(),
                 OutputVolumePercent = outputVolume.Value,
                 DelaySeconds = delay.Value,
                 PttKey = (ptt.Tag is Keys key ? key : Keys.Z).ToString(),
@@ -1153,6 +1336,8 @@ public sealed class MainForm : Form
             }
 
             SyncAliasesToDetector();
+            detector.SetSoundboardPhrases(soundboardSounds.Keys);
+            detector.SetSoundboardAliases(BuildSoundboardAliasMap());
 
             AddLog($"Process architecture: {Environment.Is64BitProcess} (64-bit=True)");
             AddLog($"OS: {Environment.OSVersion}");
@@ -1211,7 +1396,8 @@ public sealed class MainForm : Form
         using (var replacementBrush = new SolidBrush(hasSound ? Color.FromArgb(72, 31, 112) : Surface))
         using (var replacementPen = new Pen(hasSound ? Accent : Border))
         { e.Graphics.FillRectangle(replacementBrush, replacementRect); e.Graphics.DrawRectangle(replacementPen, replacementRect); }
-        TextRenderer.DrawText(e.Graphics, "🔊 Replacement", words.Font, replacementRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        string replacementName = hasSound ? $"🔊 {Path.GetFileName(sound!)}" : "Replacement";
+        TextRenderer.DrawText(e.Graphics, replacementName, words.Font, replacementRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         if (hasSound)
         {
             DrawVolumeSlider(e.Graphics, GetReplacementSliderRect(index: e.Index), GetReplacementVolume(value));
@@ -1276,6 +1462,352 @@ public sealed class MainForm : Form
         if (e.Button == MouseButtons.Left) { draggingReplacementVolume = false; draggingReplacementIndex = -1; return; }
         if (e.Button != MouseButtons.Right) return; int index = words.IndexFromPoint(e.Location);
         if (index < 0 || index >= words.Items.Count) return; words.SelectedIndex = index; wordsMenu.Show(words, e.Location);
+    }
+
+    private void DrawSoundboardItem(object? sender, DrawItemEventArgs e)
+    {
+        e.DrawBackground();
+        if (e.Index < 0 || e.Index >= soundboard.Items.Count) { e.DrawFocusRectangle(); return; }
+        string trigger = soundboard.Items[e.Index]?.ToString() ?? "";
+        soundboardSounds.TryGetValue(trigger, out var path);
+        double volume = GetSoundboardVolume(trigger);
+        var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
+        using var pen = new Pen(Border);
+        using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
+        e.Graphics.FillRectangle(brush, outer); e.Graphics.DrawRectangle(pen, outer);
+        TextRenderer.DrawText(e.Graphics, trigger, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 4, outer.Width - 16, 24), TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
+        string name = string.IsNullOrWhiteSpace(path) ? "No sound" : Path.GetFileName(path);
+        TextRenderer.DrawText(e.Graphics, "🔊  " + name, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 27, Math.Max(120, outer.Width - 90), 22), TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        string aliases = soundboardAliases.TryGetValue(trigger, out var a) && a.Count > 0 ? "Aliases: " + string.Join(", ", a) : "Aliases: none";
+        TextRenderer.DrawText(e.Graphics, aliases, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 45, Math.Max(120, outer.Width - 90), 18), TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        var sliderRect = new Rectangle(outer.Left + 8, outer.Bottom - 25, Math.Max(120, outer.Width - 155), 18);
+        DrawSoundboardVolumeSlider(e.Graphics, sliderRect, volume);
+        var testRect = new Rectangle(outer.Right - 62, outer.Bottom - 30, 58, 28);
+        using var testBrush = new SolidBrush(Surface);
+        using var testPen = new Pen(Border);
+        e.Graphics.FillRectangle(testBrush, testRect);
+        e.Graphics.DrawRectangle(testPen, testRect);
+        TextRenderer.DrawText(e.Graphics, "Test", soundboard.Font, testRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        e.DrawFocusRectangle();
+    }
+
+    private void DrawSoundboardVolumeSlider(Graphics g, Rectangle rect, double volume)
+    {
+        int y = rect.Top + rect.Height / 2, left = rect.Left + 4, right = rect.Right - 4;
+        using var track = new Pen(Border, 4); g.DrawLine(track, left, y, right, y);
+        int x = left + (int)Math.Round((right-left) * Math.Clamp(volume/1.5,0,1));
+        using var fill = new Pen(Accent,4); g.DrawLine(fill,left,y,x,y);
+        using var knob = new SolidBrush(AccentBright); g.FillEllipse(knob,x-6,y-6,12,12);
+        TextRenderer.DrawText(g,$"{Math.Round(volume*100):0}%",soundboard.Font,new Rectangle(rect.Right+4,rect.Top-5,48,28),TextDim,TextFormatFlags.VerticalCenter);
+    }
+
+    private Rectangle GetSoundboardSliderRect(int index) { var b=soundboard.GetItemRectangle(index); var o=new Rectangle(b.Left+4,b.Top+3,b.Width-8,b.Height-6); return new Rectangle(o.Left+8,o.Bottom-28,Math.Max(120,o.Width-155),18); }
+    private Rectangle GetSoundboardTestRect(int index) { var b=soundboard.GetItemRectangle(index); var o=new Rectangle(b.Left+4,b.Top+3,b.Width-8,b.Height-6); return new Rectangle(o.Right-62,o.Bottom-30,58,28); }
+    private void SetSoundboardVolumeFromPoint(int index,int x)
+    {
+        if(index<0||index>=soundboard.Items.Count)return; string trigger=soundboard.Items[index]?.ToString()??""; if(!soundboardSounds.ContainsKey(trigger))return;
+        var r=GetSoundboardSliderRect(index); int left=r.Left+4,right=r.Right-4; double n=right<=left?1:(x-left)/(double)(right-left); soundboardVolumes[trigger]=Math.Clamp(n,0,1)*1.5; soundboard.Invalidate(soundboard.GetItemRectangle(index)); SavePersistence();
+    }
+    private bool draggingSoundboardVolume;
+    private int draggingSoundboardIndex=-1;
+    private void SoundboardMouseDown(object? sender,MouseEventArgs e)
+    {
+        int index=soundboard.IndexFromPoint(e.Location); if(index<0||index>=soundboard.Items.Count)return; soundboard.SelectedIndex=index; string trigger=soundboard.Items[index]?.ToString()??"";
+        if(e.Button==MouseButtons.Left){ if(GetSoundboardSliderRect(index).Contains(e.Location)){draggingSoundboardVolume=true;draggingSoundboardIndex=index;SetSoundboardVolumeFromPoint(index,e.X);} else if(GetSoundboardTestRect(index).Contains(e.Location)) TestSoundboardSound(trigger); }
+    }
+    private void SoundboardMouseMove(object? sender,MouseEventArgs e){if(draggingSoundboardVolume&&draggingSoundboardIndex>=0&&e.Button==MouseButtons.Left)SetSoundboardVolumeFromPoint(draggingSoundboardIndex,e.X);}
+    private void SoundboardMouseUp(object? sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){draggingSoundboardVolume=false;draggingSoundboardIndex=-1;}}
+
+    private string? GetSoundboardSound(string phrase) => soundboardSounds.TryGetValue(phrase, out var path) ? path : null;
+    private double GetSoundboardVolume(string phrase) => soundboardVolumes.TryGetValue(phrase, out var value) ? Math.Clamp(value,0,1.5) : 1.0;
+
+    private void StartSoundboardListen()
+    {
+        if (engine == null || detector == null || !detector.IsReady)
+        {
+            MessageBox.Show(this, "Start VoiceGuard first so Whisper is ready.", "VoiceGuard");
+            return;
+        }
+
+        if (soundboardSounds.Count == 0)
+        {
+            MessageBox.Show(this, "Add at least one soundboard phrase first.", "VoiceGuard");
+            return;
+        }
+
+        if (soundboardListenInProgress) return;
+
+        soundboardListenInProgress = true;
+        listenSoundboard.Enabled = false;
+        SetStatus("LISTENING — say your soundboard phrase...");
+        SetMode("SOUNDBOARD LISTEN");
+
+        double start = engine.CapturePcmSeconds;
+        if (!engine.SetSoundboardListening(true))
+        {
+            soundboardListenInProgress = false;
+            listenSoundboard.Enabled = true;
+            SetMode("LIVE");
+            SetStatus("Unable to enter soundboard listening mode.");
+            return;
+        }
+        AddLog("SOUNDBOARD LISTEN CAPTURE STARTED");
+        detector.StartSoundboardListen(start, 2.5);
+    }
+
+    private void BeginSoundboardListenFromKey()
+    {
+        if (engine == null || detector == null || !detector.IsReady || soundboardListenInProgress) return;
+        soundboardListenInProgress = true;
+        listenSoundboard.Enabled = false;
+        SetMode("SOUNDBOARD LISTENING");
+        SetStatus("Listening for soundboard phrase...");
+        // The keyboard-triggered path must explicitly put AudioEngine into
+        // soundboard-listening mode. Without this, Capture_DataAvailable keeps
+        // treating the microphone as normal live passthrough and the dedicated
+        // phrase buffer never receives any audio.
+        if (!engine.SetSoundboardListening(true))
+        {
+            soundboardListenInProgress = false;
+            listenSoundboard.Enabled = true;
+            SetMode("LIVE");
+            SetStatus("Unable to enter soundboard listening mode.");
+            return;
+        }
+        AddLog("SOUNDBOARD LISTEN TRIGGERED");
+        AddLog("SOUNDBOARD LISTEN CAPTURE STARTED");
+        detector.StartSoundboardListen(engine.CapturePcmSeconds, 2.5);
+    }
+
+    private void TriggerSoundboardFromListen(string phrase)
+    {
+        var currentEngine = engine;
+        if (currentEngine == null) return;
+
+        currentEngine.SetSoundboardListening(false);
+        detector?.StopSoundboardListen();
+        soundboardListenInProgress = false;
+
+        try
+        {
+            var key = ptt.Tag is Keys k ? k : Keys.Z;
+
+            // Drive VoiceGuard's own PTT state directly as well as injecting the
+            // physical key for the game. This makes the soundboard path independent
+            // of whether the low-level keyboard hook receives injected events.
+            currentEngine.SetPtt(true);
+            PttKeyInjector.KeyDown(key);
+
+            double duration = currentEngine.TriggerSoundboardNow(phrase);
+            if (duration <= 0.0)
+            {
+                currentEngine.SetPtt(false);
+                PttKeyInjector.KeyUp(key);
+                listenSoundboard.Enabled = true;
+                SetMode("LIVE");
+                SetStatus("Soundboard trigger failed — no playable clip was found.");
+                return;
+            }
+
+            // Keep the real game PTT key held until the delayed soundboard clip
+            // has actually reached the game. The extra 350 ms gives the output
+            // device a small safety margin before releasing the game PTT.
+            double holdSeconds = Math.Max(0.5, currentEngine.DelaySeconds + duration + 0.35);
+            AddLog($"SOUNDBOARD PTT INJECTED — key={key} | hold={holdSeconds:0.000}s | phrase=\"{phrase}\"");
+            SetStatus($"SOUNDBOARD TRANSMITTING — {phrase}");
+            SetMode("SOUNDBOARD TRANSMIT");
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(holdSeconds));
+                }
+                finally
+                {
+                    try { currentEngine.SetPtt(false); } catch { }
+                    try { PttKeyInjector.KeyUp(key); } catch { }
+                    if (!IsDisposed)
+                    {
+                        BeginInvoke(() =>
+                        {
+                            listenSoundboard.Enabled = true;
+                            SetMode("LIVE");
+                            SetStatus("READY — PTT-gated delayed output is active.");
+                        });
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            try { PttKeyInjector.KeyUp(ptt.Tag is Keys k ? k : Keys.Z); } catch { }
+            listenSoundboard.Enabled = true;
+            SetMode("LIVE");
+            SetStatus("Soundboard trigger failed.");
+            AddLog($"SOUNDBOARD PTT INJECTION ERROR — {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private void AddSoundboardPhrase()
+    {
+        string? phrase = PromptForText("Add soundboard phrase", "Phrase to trigger:");
+        if (string.IsNullOrWhiteSpace(phrase)) return;
+        phrase = phrase.Trim();
+        if (soundboardSounds.ContainsKey(phrase)) { MessageBox.Show(this, "That soundboard phrase already exists.", "VoiceGuard"); return; }
+        ChooseAndEditSoundboard(phrase, null);
+    }
+
+    private void EditSelectedSoundboard()
+    {
+        if (soundboard.SelectedItem is not object item) return;
+        string oldPhrase = item.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(oldPhrase) || !soundboardSounds.TryGetValue(oldPhrase, out var oldPath)) return;
+        string? phrase = PromptForText("Edit soundboard phrase", "Phrase to trigger:");
+        if (string.IsNullOrWhiteSpace(phrase)) return;
+        phrase = phrase.Trim();
+        if (!string.Equals(phrase, oldPhrase, StringComparison.OrdinalIgnoreCase) && soundboardSounds.ContainsKey(phrase))
+        {
+            MessageBox.Show(this, "That soundboard phrase already exists.", "VoiceGuard");
+            return;
+        }
+
+        using var dialog = new OpenFileDialog
+        {
+            Title = $"Choose soundboard audio — {phrase}",
+            Filter = "Audio files|*.wav;*.mp3;*.m4a;*.aac;*.wma;*.flac;*.ogg|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+            FileName = oldPath
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+
+        using var editor = new SoundboardEditorForm(dialog.FileName, AddLog);
+        if (editor.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(editor.SavedClipPath)) return;
+
+        double oldVolume = GetSoundboardVolume(oldPhrase);
+        soundboardAliases.TryGetValue(oldPhrase, out var oldAliases);
+        soundboardSounds.Remove(oldPhrase);
+        soundboardVolumes.Remove(oldPhrase);
+        soundboardSounds[phrase] = editor.SavedClipPath;
+        soundboardVolumes[phrase] = oldVolume;
+        soundboardAliases.Remove(oldPhrase);
+        soundboardAliases[phrase] = oldAliases ?? new List<string>();
+        int oldIndex = soundboard.Items.IndexOf(item);
+        soundboard.Items[oldIndex] = phrase;
+        soundboard.SelectedIndex = oldIndex;
+        SyncSoundboardAliases();
+        SavePersistence();
+        soundboard.Invalidate();
+        SetStatus("Soundboard clip updated.");
+    }
+
+    private void ChooseAndEditSoundboard(string phrase, string? existingPath)
+    {
+        string sourcePath;
+        using (var dialog = new OpenFileDialog
+        {
+            Title = $"Choose soundboard audio — {phrase}",
+            Filter = "Audio files|*.wav;*.mp3;*.m4a;*.aac;*.wma;*.flac;*.ogg|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Multiselect = false,
+            FileName = existingPath ?? ""
+        })
+        {
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            sourcePath = dialog.FileName;
+        }
+
+        using var editor = new SoundboardEditorForm(sourcePath, AddLog);
+        if (editor.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(editor.SavedClipPath)) return;
+
+        soundboardSounds[phrase] = editor.SavedClipPath;
+        if (!soundboardVolumes.ContainsKey(phrase)) soundboardVolumes[phrase] = 1.0;
+        if (!soundboard.Items.Cast<object>().Any(x => string.Equals(x?.ToString(), phrase, StringComparison.OrdinalIgnoreCase)))
+            soundboard.Items.Add(phrase);
+        soundboard.SelectedIndex = soundboard.Items.Count - 1;
+        soundboard.Invalidate();
+        SyncSoundboardAliases();
+        SavePersistence();
+        SetStatus("Soundboard clip ready.");
+    }
+
+    private string? GetSelectedSoundboardPhrase()
+    {
+        return soundboard.SelectedItem?.ToString();
+    }
+
+    private void AddAliasToSelectedSoundboard()
+    {
+        string? phrase = GetSelectedSoundboardPhrase();
+        if (string.IsNullOrWhiteSpace(phrase)) return;
+        string? alias = PromptForText($"Add soundboard alias — {phrase}", "Alias:");
+        if (string.IsNullOrWhiteSpace(alias)) return;
+        alias = alias.Trim();
+        if (string.Equals(alias, phrase, StringComparison.OrdinalIgnoreCase)) return;
+        foreach (var pair in soundboardAliases)
+            if (pair.Value.Any(a => string.Equals(a, alias, StringComparison.OrdinalIgnoreCase)) || string.Equals(pair.Key, alias, StringComparison.OrdinalIgnoreCase))
+            { MessageBox.Show(this, "That alias is already assigned.", "VoiceGuard"); return; }
+        if (!soundboardAliases.TryGetValue(phrase, out var list)) soundboardAliases[phrase] = list = new List<string>();
+        list.Add(alias);
+        SyncSoundboardAliases();
+        SavePersistence();
+        soundboard.Invalidate();
+    }
+
+    private void ManageAliasesForSelectedSoundboard()
+    {
+        string? phrase = GetSelectedSoundboardPhrase();
+        if (string.IsNullOrWhiteSpace(phrase)) return;
+        if (!soundboardAliases.TryGetValue(phrase, out var stored)) soundboardAliases[phrase] = stored = new List<string>();
+        using var form = new Form { Text = $"Aliases — {phrase}", StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(430, 320), BackColor = Bg, ForeColor = TextMain, Font = Font, MinimizeBox = false, MaximizeBox = false };
+        var list = new ListBox { Dock = DockStyle.Fill, BackColor = Surface, ForeColor = TextMain, BorderStyle = BorderStyle.FixedSingle };
+        foreach (var a in stored) list.Items.Add(a);
+        var add = new Button { Text = "Add", Width = 80, Height = 30 }; StyleButton(add, false);
+        var remove = new Button { Text = "Remove", Width = 80, Height = 30 }; StyleButton(remove, false);
+        var ok = new Button { Text = "Save", Width = 90, Height = 30, DialogResult = DialogResult.OK }; StyleButton(ok, true);
+        var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 45, BackColor = Bg, FlowDirection = FlowDirection.LeftToRight };
+        bottom.Controls.Add(add); bottom.Controls.Add(remove); bottom.Controls.Add(ok);
+        form.Controls.Add(list); form.Controls.Add(bottom);
+        add.Click += (_, _) => { var a = PromptForText("Add alias", "Alias:"); if (!string.IsNullOrWhiteSpace(a)) list.Items.Add(a.Trim()); };
+        remove.Click += (_, _) => { if (list.SelectedIndex >= 0) list.Items.RemoveAt(list.SelectedIndex); };
+        if (form.ShowDialog(this) != DialogResult.OK) return;
+        soundboardAliases[phrase] = list.Items.Cast<object>().Select(x => x?.ToString()?.Trim() ?? "").Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        SyncSoundboardAliases(); SavePersistence(); soundboard.Invalidate();
+    }
+
+    private Dictionary<string,string> BuildSoundboardAliasMap()
+    {
+        var map = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in soundboardAliases)
+            foreach (var alias in pair.Value)
+                if (!string.IsNullOrWhiteSpace(alias)) map[alias] = pair.Key;
+        return map;
+    }
+
+    private void SyncSoundboardAliases()
+    {
+        detector?.SetSoundboardPhrases(soundboardSounds.Keys);
+        detector?.SetSoundboardAliases(BuildSoundboardAliasMap());
+    }
+
+    private void RemoveSelectedSoundboard()
+    {
+        if (soundboard.SelectedItem is not object item) return;
+        string phrase = item.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(phrase)) return;
+        soundboard.Items.Remove(item);
+        soundboardSounds.Remove(phrase);
+        soundboardVolumes.Remove(phrase);
+        soundboardAliases.Remove(phrase);
+        SyncSoundboardAliases();
+        SavePersistence();
+    }
+
+    private async void TestSoundboardSound(string phrase)
+    {
+        var path=GetSoundboardSound(phrase); if(string.IsNullOrWhiteSpace(path)||!File.Exists(path)){MessageBox.Show(this,"No soundboard clip is assigned.","VoiceGuard");return;}
+        try { SetStatus("Testing soundboard clip..."); double volume=Math.Clamp(GetSoundboardVolume(phrase)*(outputVolume.Value/100.0),0,1.5); await Task.Run(()=>PlayReplacementOnDefaultDevice(path,volume)); SetStatus("Soundboard test complete."); } catch(Exception ex){AddLog($"SOUNDBOARD TEST ERROR — {Path.GetFileName(path)} — {ex.Message}");}
     }
 
     private void AddBlockedWord()
@@ -1724,6 +2256,8 @@ public sealed class MainForm : Form
 
         detector.SetWords(GetWords());
         SyncAliasesToDetector();
+        detector.SetSoundboardPhrases(soundboardSounds.Keys);
+            detector.SetSoundboardAliases(BuildSoundboardAliasMap());
         detector.Reset();
 
         if (!outDev.Name.Contains("CABLE Input", StringComparison.OrdinalIgnoreCase))
@@ -1750,7 +2284,12 @@ public sealed class MainForm : Form
                 (double)delay.Value,
                 SetStatus,
                 (pcm, count, absoluteStartSeconds) =>
-                    detector.AddPcm48k(pcm, count, absoluteStartSeconds),
+                {
+                    if (detector.IsSoundboardListening)
+                        detector.AddSoundboardListenPcm(pcm, count, absoluteStartSeconds);
+                    else
+                        detector.AddPcm48k(pcm, count, absoluteStartSeconds);
+                },
                 AddLog,
                 seconds => detector.BeginPttSegment(seconds),
                 seconds => detector.EndPttSegment(seconds),
@@ -1760,7 +2299,9 @@ public sealed class MainForm : Form
                 GetReplacementSound,
                 GetReplacementPlaybackSettings,
                 GetReplacementVolume,
-                () => outputVolume.Value / 100.0);
+                () => outputVolume.Value / 100.0,
+                GetSoundboardSound,
+                GetSoundboardVolume);
 
             detector.SetOutputCursorProvider(() => newEngine.CurrentSourceSeconds);
 
@@ -1782,6 +2323,36 @@ public sealed class MainForm : Form
                     }
                 });
 
+            detector.SetSoundboardCallback(
+                (startSeconds, endSeconds, phrase) =>
+                {
+                    string? soundPath = GetSoundboardSound(phrase);
+                    if (string.IsNullOrWhiteSpace(soundPath)) return;
+                    AddLog($"SOUNDBOARD CALLBACK RECEIVED — {phrase} {startSeconds:0.000}s→{endSeconds:0.000}s");
+                    try { newEngine.AddSoundboardRegion(startSeconds, endSeconds, phrase, soundPath); }
+                    catch (ObjectDisposedException) { AddLog($"SOUNDBOARD CALLBACK IGNORED — engine disposed — {phrase}"); }
+                    catch (Exception ex) { AddLog($"SOUNDBOARD CALLBACK ERROR — {ex.GetType().Name}: {ex.Message}"); }
+                });
+
+            detector.SetSoundboardListenCallback(TriggerSoundboardFromListen);
+            detector.SetSoundboardListenNoMatchCallback(() =>
+            {
+                // Detector and AudioEngine have separate listener flags. Always
+                // clear BOTH so a no-match cannot leave the microphone feeding
+                // the listener path forever or block subsequent triggers.
+                newEngine.SetSoundboardListening(false);
+                soundboardListenInProgress = false;
+                if (!IsDisposed)
+                {
+                    BeginInvoke(() =>
+                    {
+                        listenSoundboard.Enabled = true;
+                        SetMode("LIVE");
+                        SetStatus("No configured soundboard phrase was recognized.");
+                    });
+                }
+            });
+
             engine = newEngine;
             AddLog("Censor callback attached.");
 
@@ -1802,6 +2373,42 @@ public sealed class MainForm : Form
 
             hook.Start();
 
+            var listenKey = soundboardListenKey.Tag is Keys lk ? lk : Keys.OemPeriod;
+            soundboardListenVirtualKey = (int)listenKey;
+            AddLog($"SOUNDBOARD LISTEN KEY MONITOR STARTING — key={listenKey}");
+            soundboardListenKeyCts?.Cancel();
+            soundboardListenKeyCts?.Dispose();
+            soundboardListenKeyCts = new CancellationTokenSource();
+            var listenToken = soundboardListenKeyCts.Token;
+            Interlocked.Exchange(ref soundboardListenKeyDown, 0);
+            soundboardListenKeyThread = new Thread(() =>
+            {
+                while (!listenToken.IsCancellationRequested)
+                {
+                    int vk = Volatile.Read(ref soundboardListenVirtualKey);
+                    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                    int wasDown = Volatile.Read(ref soundboardListenKeyDown);
+                    if (down)
+                    {
+                        if (wasDown == 0 && Interlocked.Exchange(ref soundboardListenKeyDown, 1) == 0)
+                        {
+                            try
+                            {
+                                if (!IsDisposed) BeginInvoke(BeginSoundboardListenFromKey);
+                            }
+                            catch { }
+                        }
+                    }
+                    else
+                    {
+                        Interlocked.Exchange(ref soundboardListenKeyDown, 0);
+                    }
+                    Thread.Sleep(20);
+                }
+            })
+            { IsBackground = true, Name = "VoiceGuard Soundboard Listen Key" };
+            soundboardListenKeyThread.Start();
+
             start.Text = "Stop VoiceGuard";
             start.Enabled = true;
             AddLog("VoiceGuard started.");
@@ -1809,6 +2416,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
+            DiagnosticLogger.WriteException("STARTUP ERROR", ex);
             StopEngine();
             MessageBox.Show(ex.ToString(), "VoiceGuard startup error");
         }
@@ -1816,6 +2424,7 @@ public sealed class MainForm : Form
 
     private void AddLog(string text)
     {
+        DiagnosticLogger.Write("APP", text);
         if (IsDisposed) return;
 
         // Keep the on-screen log human-readable. The detector produces many
@@ -1924,8 +2533,17 @@ public sealed class MainForm : Form
 
     private void StopEngine()
     {
+        soundboardListenInProgress = false;
+        listenSoundboard.Enabled = true;
+        try { PttKeyInjector.KeyUp(ptt.Tag is Keys k ? k : Keys.Z); } catch { }
+        detector?.StopSoundboardListen();
         hook?.Dispose();
         hook = null;
+        soundboardListenKeyCts?.Cancel();
+        soundboardListenKeyCts?.Dispose();
+        soundboardListenKeyCts = null;
+        soundboardListenKeyThread = null;
+        Interlocked.Exchange(ref soundboardListenKeyDown, 0);
 
         engine?.Stop();
         engine?.Dispose();
