@@ -30,7 +30,6 @@ public sealed class MainForm : Form
     private readonly ComboBox output = new();
     private readonly NumericUpDown delay = new();
     private readonly TextBox ptt = new();
-    private readonly TextBox voiceGuardTriggerKeyBox = new();
     private readonly ListBox words = new();
     private readonly ContextMenuStrip wordsMenu = new();
     private readonly Button addWord = new();
@@ -59,6 +58,17 @@ public sealed class MainForm : Form
     private CancellationTokenSource? soundboardListenKeyCts;
     private int soundboardListenVirtualKey = (int)Keys.OemPeriod;
     private int soundboardListenKeyDown;
+    private readonly TextBox voiceGuardTriggerKeyBox = new();
+    private Thread? voiceGuardTriggerKeyThread;
+    private CancellationTokenSource? voiceGuardTriggerKeyCts;
+    private CancellationTokenSource? voiceGuardPttCts;
+    private int voiceGuardTriggerVirtualKey = (int)Keys.Oemcomma;
+    private int voiceGuardTriggerKeyDown;
+    private bool voiceGuardPttInjected;
+    private DateTime voiceGuardTriggerStartedUtc;
+    private DateTime voiceGuardTriggerReleasedUtc;
+    private bool voiceGuardTriggerReleased;
+    private double voiceGuardTriggerHeldSeconds;
     private bool soundboardPlaybackActive;
     private CancellationTokenSource? soundboardPlaybackCts;
     private WaveOutEvent? soundboardHeadsetOutput;
@@ -80,12 +90,6 @@ public sealed class MainForm : Form
 
     private AudioEngine? engine;
     private PttKeyHook? hook;
-    private Thread? voiceGuardTriggerKeyThread;
-    private CancellationTokenSource? voiceGuardTriggerKeyCts;
-    private int voiceGuardTriggerVirtualKey = (int)Keys.Oemcomma;
-    private int voiceGuardTriggerKeyDown;
-    private CancellationTokenSource? voiceGuardPttCts;
-    private bool voiceGuardPttInjected;
     private SpeechDetector? detector;
     private bool loadingPersistence;
     private bool exitingApplication;
@@ -144,12 +148,12 @@ public sealed class MainForm : Form
         public decimal OutputVolumePercent { get; set; } = 100M;
         public decimal DelaySeconds { get; set; } = 3M;
         public string PttKey { get; set; } = Keys.Z.ToString();
-        public string VoiceGuardTriggerKey { get; set; } = Keys.Oemcomma.ToString();
         public string? InputDevice { get; set; }
         public string? OutputDevice { get; set; }
         public bool StartWithWindows { get; set; }
         public bool MinimizeToTray { get; set; }
         public string StartStopHotkey { get; set; } = "Control, Alt, V";
+        public string VoiceGuardTriggerKey { get; set; } = Keys.Oemcomma.ToString();
     }
 
     private sealed class SoundboardEntryConfig
@@ -282,7 +286,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 17,
+            RowCount = 16,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -302,6 +306,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // VoiceGuard trigger key
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // soundboard listen key
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // start/stop hotkey
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); // startup checkboxes
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); // mode
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
@@ -381,7 +386,7 @@ public sealed class MainForm : Form
         left.Controls.Add(delayPanel, 0, 8);
 
         var pttPanel = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0) };
-        var pttLabel = MakeFieldLabel("Game PTT key");
+        var pttLabel = MakeFieldLabel("PTT key");
         pttLabel.Dock = DockStyle.Top;
         pttLabel.Height = 24;
         pttPanel.Controls.Add(pttLabel);
@@ -410,6 +415,7 @@ public sealed class MainForm : Form
         var voiceGuardTriggerBox = MakeInputBox(voiceGuardTriggerKeyBox, 70);
         voiceGuardTriggerBox.Location = new Point(0, 24);
         voiceGuardTriggerPanel.Controls.Add(voiceGuardTriggerBox);
+        voiceGuardTriggerBox.BringToFront();
         voiceGuardTriggerKeyBox.Text = "<";
         voiceGuardTriggerKeyBox.Tag = Keys.Oemcomma;
         voiceGuardTriggerKeyBox.ReadOnly = true;
@@ -419,6 +425,7 @@ public sealed class MainForm : Form
             voiceGuardTriggerKeyBox.Tag = e.KeyCode;
             voiceGuardTriggerVirtualKey = (int)e.KeyCode;
             voiceGuardTriggerKeyBox.Text = DisplayKey(e.KeyCode);
+            e.SuppressKeyPress = true;
             SavePersistence();
         };
         left.Controls.Add(voiceGuardTriggerPanel, 0, 10);
@@ -1051,12 +1058,6 @@ public sealed class MainForm : Form
                 ptt.Tag = savedKey;
                 ptt.Text = savedKey.ToString();
             }
-            if (Enum.TryParse<Keys>(config.VoiceGuardTriggerKey, true, out var savedTriggerKey))
-            {
-                voiceGuardTriggerKeyBox.Tag = savedTriggerKey;
-                voiceGuardTriggerVirtualKey = (int)savedTriggerKey;
-                voiceGuardTriggerKeyBox.Text = DisplayKey(savedTriggerKey);
-            }
 
              if (Enum.TryParse<Keys>(config.SoundboardListenKey, true, out var savedListenKey))
              {
@@ -1067,6 +1068,13 @@ public sealed class MainForm : Form
 
             loadedInputDeviceName = config.InputDevice;
             loadedOutputDeviceName = config.OutputDevice;
+
+            if (Enum.TryParse<Keys>(config.VoiceGuardTriggerKey, true, out var savedTriggerKey))
+            {
+                voiceGuardTriggerKeyBox.Tag = savedTriggerKey;
+                voiceGuardTriggerVirtualKey = (int)savedTriggerKey;
+                voiceGuardTriggerKeyBox.Text = DisplayKey(savedTriggerKey);
+            }
 
             startWithWindows.Checked = config.StartWithWindows;
             minimizeToTray.Checked = config.MinimizeToTray;
@@ -1126,12 +1134,12 @@ public sealed class MainForm : Form
                 OutputVolumePercent = outputVolume.Value,
                 DelaySeconds = delay.Value,
                 PttKey = (ptt.Tag is Keys key ? key : Keys.Z).ToString(),
-                VoiceGuardTriggerKey = (voiceGuardTriggerKeyBox.Tag is Keys triggerKey ? triggerKey : Keys.Oemcomma).ToString(),
                 InputDevice = input.SelectedItem is AudioDeviceInfo inputDevice ? inputDevice.Name : null,
                 OutputDevice = output.SelectedItem is AudioDeviceInfo outputDevice ? outputDevice.Name : null,
                 StartWithWindows = startWithWindows.Checked,
                 MinimizeToTray = minimizeToTray.Checked,
-                StartStopHotkey = FormatHotkeyForConfig(startStopHotkey.Tag is Keys startStopKey ? startStopKey : Keys.Control | Keys.Alt | Keys.V)
+                StartStopHotkey = FormatHotkeyForConfig(startStopHotkey.Tag is Keys startStopKey ? startStopKey : Keys.Control | Keys.Alt | Keys.V),
+                VoiceGuardTriggerKey = (voiceGuardTriggerKeyBox.Tag is Keys triggerKey ? triggerKey : Keys.Oemcomma).ToString()
             };
 
             var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
@@ -1634,20 +1642,7 @@ public sealed class MainForm : Form
             var key = ptt.Tag is Keys k ? k : Keys.Z;
 
             currentEngine.SetPtt(true);
-            bool gamePttInjected = false;
-            try
-            {
-                PttKeyInjector.KeyDown(key);
-                gamePttInjected = true;
-                AddLog($"SOUNDBOARD GAME PTT INJECTED — key={key}");
-            }
-            catch (Exception pttEx)
-            {
-                AddLog($"SOUNDBOARD GAME PTT INJECTION ERROR — {pttEx.GetType().Name}: {pttEx.Message}");
-                // Do not report this as a missing soundboard clip. The clip
-                // still needs to be queued and played locally so the failure
-                // is diagnosable without breaking soundboard playback.
-            }
+            PttKeyInjector.KeyDown(key);
 
             double duration = currentEngine.TriggerSoundboardNow(phrase);
             if (duration <= 0.0)
@@ -1672,7 +1667,7 @@ public sealed class MainForm : Form
             // output safety margin. The key is released by the same cancellation
             // path used when the user presses the soundboard key again.
             double holdSeconds = Math.Max(0.5, currentEngine.DelaySeconds + duration + 0.50);
-            AddLog($"SOUNDBOARD PTT { (gamePttInjected ? "INJECTED" : "NOT INJECTED") } — key={key} | hold={holdSeconds:0.000}s | phrase=\"{phrase}\"");
+            AddLog($"SOUNDBOARD PTT INJECTED — key={key} | hold={holdSeconds:0.000}s | phrase=\"{phrase}\"");
             SetStatus($"SOUNDBOARD TRANSMITTING — {phrase}");
             SetMode("SOUNDBOARD TRANSMIT");
 
@@ -1799,6 +1794,90 @@ public sealed class MainForm : Form
         SetMode("LIVE");
         SetStatus("Soundboard playback stopped — PTT released.");
         AddLog("SOUNDBOARD PLAYBACK CANCELLED — PTT released immediately");
+    }
+
+    private static string DisplayKey(Keys key)
+    {
+        return key switch
+        {
+            Keys.Oemcomma => "<",
+            Keys.OemPeriod => ">",
+            Keys.OemMinus => "-",
+            Keys.Oemplus => "+",
+            Keys.Space => "SPACE",
+            _ => key.ToString()
+        };
+    }
+
+    private void BeginVoiceGuardTrigger(bool down)
+    {
+        var currentEngine = engine;
+        var currentDetector = detector;
+        if (currentEngine == null || currentDetector == null || !currentDetector.IsReady) return;
+        var pttKey = ptt.Tag is Keys k ? k : Keys.Z;
+        double delaySeconds = Math.Max(0.0, currentEngine.DelaySeconds);
+
+        if (down)
+        {
+            if (voiceGuardPttCts != null) return;
+            voiceGuardTriggerStartedUtc = DateTime.UtcNow;
+            voiceGuardTriggerReleased = false;
+            voiceGuardTriggerReleasedUtc = DateTime.MinValue;
+            voiceGuardTriggerHeldSeconds = 0.0;
+            voiceGuardPttInjected = false;
+            currentEngine.SetPtt(true);
+            voiceGuardPttCts = new CancellationTokenSource();
+            var token = voiceGuardPttCts.Token;
+            AddLog($"VOICEGUARD TRIGGER DOWN — game PTT scheduled +{delaySeconds:0.000}s");
+            SetMode("DELAY / ANALYZING");
+            SetStatus($"VoiceGuard trigger active — PTT starts after {delaySeconds:0.0}s...");
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(delaySeconds), token);
+                    if (token.IsCancellationRequested) return;
+                    PttKeyInjector.KeyDown(pttKey);
+                    voiceGuardPttInjected = true;
+                    AddLog($"GAME PTT DOWN — key={pttKey} | trigger+{delaySeconds:0.000}s");
+                    while (!token.IsCancellationRequested && !voiceGuardTriggerReleased)
+                        await Task.Delay(10, token);
+                    if (token.IsCancellationRequested) return;
+                    DateTime target = voiceGuardTriggerReleasedUtc.AddSeconds(delaySeconds);
+                    TimeSpan remaining = target - DateTime.UtcNow;
+                    if (remaining > TimeSpan.Zero) await Task.Delay(remaining, token);
+                    if (token.IsCancellationRequested) return;
+                    try { PttKeyInjector.KeyUp(pttKey); } catch { }
+                    voiceGuardPttInjected = false;
+                    AddLog($"GAME PTT UP — key={pttKey} | trigger hold={voiceGuardTriggerHeldSeconds:0.000}s | delay={delaySeconds:0.000}s");
+                    if (!IsDisposed) BeginInvoke(() => { SetMode("LIVE"); SetStatus("READY — PTT-gated delayed output is active."); });
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex)
+                {
+                    AddLog($"VOICEGUARD TRIGGER ERROR — {ex.GetType().Name}: {ex.Message}");
+                    try { currentEngine.SetPtt(false); } catch { }
+                    try { PttKeyInjector.KeyUp(pttKey); } catch { }
+                    voiceGuardPttInjected = false;
+                }
+                finally
+                {
+                    if (!IsDisposed) { try { BeginInvoke(() => { voiceGuardPttCts?.Dispose(); voiceGuardPttCts = null; }); } catch { } }
+                }
+            }, token);
+        }
+        else
+        {
+            if (voiceGuardPttCts == null) return;
+            DateTime releasedUtc = DateTime.UtcNow;
+            voiceGuardTriggerReleased = true;
+            voiceGuardTriggerReleasedUtc = releasedUtc;
+            voiceGuardTriggerHeldSeconds = Math.Max(0.0, (releasedUtc - voiceGuardTriggerStartedUtc).TotalSeconds);
+            currentEngine.SetPtt(false);
+            SetMode("DELAYED / DRAINING");
+            SetStatus("VoiceGuard trigger released — finishing delayed filtered audio...");
+            AddLog($"VOICEGUARD TRIGGER UP — hold={voiceGuardTriggerHeldSeconds:0.000}s | Game PTT target={releasedUtc.AddSeconds(delaySeconds):HH:mm:ss.fff}");
+        }
     }
 
     private void AddSoundboardPhrase()
@@ -2422,6 +2501,8 @@ public sealed class MainForm : Form
                 return;
         }
 
+        var key = ptt.Tag is Keys k ? k : Keys.F13;
+
         try
         {
             // Keep a stable engine reference inside the asynchronous censor callback.
@@ -2507,6 +2588,21 @@ public sealed class MainForm : Form
             AddLog("Censor callback attached.");
 
             newEngine.Start();
+
+            AddLog($"PTT HOOK STARTING — key={key}");
+            hook = new PttKeyHook(key, down =>
+            {
+                AddLog($"PTT {(down ? "DOWN" : "UP")} — key={key}");
+                engine?.SetPtt(down);
+                // Do not reset the detector on PTT release. AudioEngine now
+                // supplies the global capture timestamp whenever a PTT segment
+                // begins; resetting here would send Whisper timestamps back to
+                // zero and break censor-region alignment.
+                SetMode(down ? "DELAY / ANALYZING" : "DELAYED / DRAINING");
+                // Queued Whisper work is intentionally preserved.
+            });
+
+            hook.Start();
 
             var triggerKey = voiceGuardTriggerKeyBox.Tag is Keys tk ? tk : Keys.Oemcomma;
             voiceGuardTriggerVirtualKey = (int)triggerKey;
@@ -2702,97 +2798,6 @@ public sealed class MainForm : Form
         status.Text = text;
     }
 
-    private static string DisplayKey(Keys key)
-    {
-        return key switch
-        {
-            Keys.Oemcomma => "<",
-            Keys.OemPeriod => ">",
-            Keys.OemMinus => "-",
-            Keys.Oemplus => "+",
-            Keys.Space => "SPACE",
-            _ => key.ToString()
-        };
-    }
-
-    private void BeginVoiceGuardTrigger(bool down)
-    {
-        var currentEngine = engine;
-        if (currentEngine == null) return;
-
-        var pttKey = ptt.Tag is Keys k ? k : Keys.Z;
-
-        if (down)
-        {
-            // Engage the game's PTT immediately. The audio itself remains on the
-            // delayed/censored timeline, so the configured delay is the only
-            // audio delay. Waiting here for delaySeconds would add a second
-            // delay on top of the delayed output timeline.
-            currentEngine.SetVoiceGuardTrigger(true);
-            voiceGuardPttCts?.Cancel();
-            voiceGuardPttCts?.Dispose();
-            voiceGuardPttCts = null;
-
-            SetMode("DELAY / ANALYZING");
-            SetStatus($"Capturing and filtering — game PTT engaged; {currentEngine.DelaySeconds:0.0}s audio delay active...");
-
-            try
-            {
-                currentEngine.EngageGamePtt();
-                PttKeyInjector.KeyDown(pttKey);
-                voiceGuardPttInjected = true;
-                AddLog($"GAME PTT INJECTED — key={pttKey} | VoiceGuard trigger down");
-                if (!IsDisposed)
-                    BeginInvoke(() =>
-                    {
-                        SetMode("DELAY / ANALYZING");
-                        SetStatus($"Game PTT held — transmitting filtered audio after {currentEngine.DelaySeconds:0.0}s delay...");
-                    });
-            }
-            catch (Exception ex)
-            {
-                voiceGuardPttInjected = false;
-                try { currentEngine.SetVoiceGuardTrigger(false); } catch { }
-                AddLog($"GAME PTT INJECTION ERROR — {ex.GetType().Name}: {ex.Message}");
-                SetMode("LIVE");
-                SetStatus("PTT injection failed — delayed audio was not transmitted.");
-            }
-        }
-        else
-        {
-            voiceGuardPttCts?.Cancel();
-            voiceGuardPttCts?.Dispose();
-            voiceGuardPttCts = null;
-            currentEngine.SetVoiceGuardTrigger(false);
-
-            if (voiceGuardPttInjected)
-            {
-                _ = ReleaseInjectedPttAfterDrain(currentEngine, pttKey);
-            }
-            else
-            {
-                // No injected PTT means there is nothing to release.
-                SetMode("LIVE");
-                SetStatus("READY — VoiceGuard trigger mode active.");
-            }
-        }
-    }
-
-    private bool IsTriggerPhysicallyDown() => (GetAsyncKeyState(voiceGuardTriggerVirtualKey) & 0x8000) != 0;
-
-    private async Task ReleaseInjectedPttAfterDrain(AudioEngine currentEngine, Keys pttKey)
-    {
-        for (int i = 0; i < 1200; i++)
-        {
-            await Task.Delay(25);
-            if (currentEngine.CurrentSourceSeconds >= currentEngine.CapturePcmSeconds - 0.01) break;
-        }
-        try { PttKeyInjector.KeyUp(pttKey); } catch { }
-        voiceGuardPttInjected = false;
-        if (!IsDisposed) BeginInvoke(() => { SetMode("LIVE"); SetStatus("READY — VoiceGuard trigger mode active."); });
-        AddLog($"GAME PTT RELEASED — key={pttKey} | delayed filtered audio drained");
-    }
-
     private void StopEngine()
     {
         try { soundboardPlaybackCts?.Cancel(); } catch { }
@@ -2806,6 +2811,10 @@ public sealed class MainForm : Form
         detector?.StopSoundboardListen();
         hook?.Dispose();
         hook = null;
+        soundboardListenKeyCts?.Cancel();
+        soundboardListenKeyCts?.Dispose();
+        soundboardListenKeyCts = null;
+        soundboardListenKeyThread = null;
         voiceGuardTriggerKeyCts?.Cancel();
         voiceGuardTriggerKeyCts?.Dispose();
         voiceGuardTriggerKeyCts = null;
@@ -2814,10 +2823,6 @@ public sealed class MainForm : Form
         voiceGuardPttCts = null;
         try { if (voiceGuardPttInjected) PttKeyInjector.KeyUp(ptt.Tag is Keys k ? k : Keys.Z); } catch { }
         voiceGuardPttInjected = false;
-        soundboardListenKeyCts?.Cancel();
-        soundboardListenKeyCts?.Dispose();
-        soundboardListenKeyCts = null;
-        soundboardListenKeyThread = null;
         Interlocked.Exchange(ref soundboardListenKeyDown, 0);
 
         engine?.Stop();

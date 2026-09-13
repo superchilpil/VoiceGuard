@@ -200,7 +200,7 @@ public sealed class AudioEngine : IDisposable
             if (capturePackets == 1 || capturePackets % 50 == 0)
                 log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode}");
 
-            if (ptt || (delayedMode && !draining))
+            if (ptt)
             {
                 delayed.AddSamples(e.Buffer, 0, e.BytesRecorded);
                 var copy = new byte[e.BytesRecorded];
@@ -340,62 +340,6 @@ public sealed class AudioEngine : IDisposable
     {
         try { using var reader = new WaveFileReader(path); return reader.TotalTime.TotalSeconds; }
         catch { return 0; }
-    }
-
-    public void EngageGamePtt()
-    {
-        lock (stateLock)
-        {
-            if (stopped || !delayedMode || draining) return;
-            ptt = true;
-            log("GAME PTT STATE ENGAGED — delayed timeline preserved");
-        }
-    }
-
-    public void SetVoiceGuardTrigger(bool down)
-    {
-        lock (stateLock)
-        {
-            if (stopped) return;
-
-            if (down && !delayedMode)
-            {
-                soundboardListening = false;
-                ptt = false;
-                draining = false;
-                delayedMode = true;
-                drainTargetSeconds = 0;
-                delayed?.ClearBuffer();
-                switcher?.ClearLiveBuffer();
-
-                double baseSeconds = Math.Max(0, capturePcmSeconds - delaySeconds);
-                switcher?.BeginDelayedTimeline(baseSeconds);
-
-                int silenceBytes = (int)Math.Round(delaySeconds * BytesPerSecond);
-                silenceBytes -= silenceBytes % 2;
-                if (silenceBytes > 0)
-                    delayed?.AddSamples(new byte[silenceBytes], 0, silenceBytes);
-
-                analysisSegmentStart?.Invoke(capturePcmSeconds);
-                log($"VOICEGUARD TRIGGER DOWN — source={capturePcmSeconds:0.000}s | delay={delaySeconds:0.0}s");
-                status($"VOICEGUARD ACTIVE — PTT will engage after {delaySeconds:0.0}s...");
-            }
-            else if (!down && delayedMode && !draining)
-            {
-                ptt = false;
-                draining = true;
-                drainTargetSeconds = capturePcmSeconds;
-                double tailSeconds = GetReplacementDrainTargetSeconds() - capturePcmSeconds;
-                tailSeconds = Math.Max(0.25, tailSeconds + 0.25);
-                long tailBytesLong = Math.Min((long)Math.Ceiling(tailSeconds * BytesPerSecond), BytesPerSecond * 300L);
-                int tailBytes = (int)Math.Min(int.MaxValue - 1L, tailBytesLong);
-                tailBytes -= tailBytes % 2;
-                if (tailBytes > 0) delayed?.AddSamples(new byte[tailBytes], 0, tailBytes);
-                analysisSegmentEnd?.Invoke(capturePcmSeconds);
-                log($"VOICEGUARD TRIGGER UP — source={capturePcmSeconds:0.000}s | draining delayed audio");
-                status("VOICEGUARD RELEASED — finishing filtered audio...");
-            }
-        }
     }
 
     public void SetPtt(bool down)
@@ -597,17 +541,6 @@ public sealed class AudioEngine : IDisposable
                 if(liveRead < count)
                     Array.Clear(buffer, offset + liveRead, count - liveRead);
                 ApplyOutputVolume(buffer, offset, count);
-                return count;
-            }
-
-            // In VoiceGuard Trigger mode, keep the delayed timeline paused until
-            // the game PTT has actually been engaged. Previously the output cursor
-            // advanced during the delay while the game's PTT was still up, which
-            // meant the game never received the beginning of the filtered speech.
-            // Soundboard is unaffected because it engages PTT before scheduling its clip.
-            if (!s.ptt && !s.draining)
-            {
-                Array.Clear(buffer, offset, count);
                 return count;
             }
 
