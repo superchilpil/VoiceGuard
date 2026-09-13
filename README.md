@@ -4,19 +4,30 @@ VoiceGuard is a Windows voice-chat profanity filter designed primarily for **gam
 
 ## How VoiceGuard Works
 
-VoiceGuard has two audio paths depending on whether you are pressing your configured PTT key:
+VoiceGuard uses a dedicated **VoiceGuard Trigger Key** to start the filtered transmission path. The VoiceGuard Trigger Key and the **Game PTT Key** are separate and independently configurable.
 
-- **PTT not pressed:** VoiceGuard uses **live audio passthrough**. Your microphone audio is sent directly to the selected output without the profanity filter or Whisper speech recognition being applied.
-- **PTT pressed:** VoiceGuard captures and delays your speech, analyzes it with Whisper, and filters detected blocked words before the delayed audio is sent to the selected output.
-- **PTT released:** VoiceGuard finishes draining the delayed PTT audio and then automatically returns to live passthrough.
+- **VoiceGuard Trigger Key held:** VoiceGuard privately captures your microphone speech, delays it for Whisper analysis, and prepares the filtered audio for transmission. The trigger key itself is not sent to the game.
+- **Game PTT:** VoiceGuard automatically presses the configured Game PTT Key when the delayed audio is ready to begin transmitting. The game PTT remains held while the delayed/filtered audio is transmitted and while remaining queued audio drains.
+- **VoiceGuard Trigger Key released:** VoiceGuard finishes draining any remaining delayed audio and then releases the Game PTT Key.
+- **Idle:** When the VoiceGuard Trigger Key is not active and no delayed transmission is draining, VoiceGuard uses live microphone passthrough.
 
-This design is intended for games where you normally communicate by holding a push-to-talk key. Audio that you are not intentionally transmitting through PTT is not filtered or transcribed by VoiceGuard.
+This separates the key used to request a filtered transmission from the key the game uses for push-to-talk. VoiceGuard therefore does not depend on the user physically holding the game's PTT key during filtered speech.
+
+### Configurable Transmission Keys
+
+VoiceGuard provides separate settings for:
+
+- **VoiceGuard Trigger Key** — the key you hold to capture and transmit filtered speech. Default: `<`.
+- **Game PTT Key** — the key VoiceGuard automatically presses in the game while transmitting delayed audio.
+- **Soundboard Listen Key** — the key used to begin the private soundboard phrase-listening window.
+
+All three keys are configurable independently and are saved with the VoiceGuard configuration.
 
 ### PTT and Elevated Applications
 
-VoiceGuard's global PTT detection can be affected when a **higher-privilege/elevated application** is in the foreground. For example, Windows Task Manager runs elevated and may prevent VoiceGuard from receiving the PTT key while Task Manager has focus.
+VoiceGuard's global keyboard input and PTT injection can be affected when a **higher-privilege/elevated application** is in the foreground. For example, Windows Task Manager runs elevated and may prevent VoiceGuard from interacting with an elevated foreground application normally.
 
-If PTT stops responding only when an elevated application is in the foreground, this is a Windows security/privilege boundary rather than a VoiceGuard audio-processing failure. Running VoiceGuard as **Administrator** allows PTT to work with elevated foreground applications, but VoiceGuard does not normally require administrator privileges.
+If PTT stops responding only when an elevated application is in the foreground, this can be a Windows security/privilege boundary rather than an audio-processing failure. Running VoiceGuard as **Administrator** can allow interaction with elevated foreground applications, but VoiceGuard does not normally require administrator privileges.
 
 ## Requirements
 
@@ -43,23 +54,41 @@ The latest Windows installer is available from the repository's GitHub Releases 
 4. Select **CABLE Input** / the VB-CABLE playback side as the VoiceGuard output device.
 5. Configure your game or voice-chat application to use **CABLE Output** / the VB-CABLE recording side as its microphone input.
 6. Add the words or phrases you want VoiceGuard to block.
-7. Configure your preferred push-to-talk key in VoiceGuard.
-8. **Hold the push-to-talk key when you want to transmit.** VoiceGuard delays that audio long enough for Whisper to recognize speech and filters detected blocked words before sending the audio to VB-CABLE.
-9. **When PTT is not pressed, VoiceGuard passes microphone audio through live without filtering or Whisper transcription.**
-10. Release the push-to-talk key when finished speaking. VoiceGuard drains the remaining delayed audio and then returns to live passthrough.
+7. Configure the **VoiceGuard Trigger Key** and the **Game PTT Key** separately.
+8. **Hold the VoiceGuard Trigger Key when you want to transmit.** VoiceGuard captures that speech privately, delays it long enough for Whisper to recognize speech, and filters detected blocked words before sending the delayed audio to VB-CABLE.
+9. VoiceGuard automatically presses the configured **Game PTT Key** when the delayed transmission begins. You do not need to physically press the game's PTT key.
+10. Release the VoiceGuard Trigger Key when finished speaking. VoiceGuard drains the remaining delayed audio and then releases the Game PTT Key.
+11. When no filtered transmission is active, VoiceGuard returns to live microphone passthrough.
+
+### Transmission Timing
+
+The VoiceGuard Trigger workflow applies the configured VoiceGuard delay **once**. The Game PTT Key is engaged for the transmission without adding a second full delay before the delayed audio begins.
+
+For example, with a 2.5-second delay:
+
+    VoiceGuard Trigger held
+        -> capture/filter privately
+        -> approximately 2.5 seconds of configured delay
+        -> Game PTT automatically pressed
+        -> delayed filtered audio transmitted
+        -> remaining queued audio drains
+        -> Game PTT released
+
+The Game PTT remains held long enough for the complete delayed transmission. This prevents the game from cutting off the beginning or end of the filtered audio because its PTT was released too early.
 
 ### Delay
 
-VoiceGuard uses a short audio delay during PTT transmission so Whisper has time to transcribe speech and detect blocked words before the audio reaches the output.
+VoiceGuard uses a short audio delay during filtered transmission so Whisper has time to transcribe speech and detect blocked words before the audio reaches the output.
 
 - **2.0 seconds is the minimum delay** supported by VoiceGuard and is intended for higher-end machines that can process Whisper quickly enough.
 - If VoiceGuard is **missing words or frequently showing `MISSED` entries** in the log, increase the delay to give Whisper more time to recognize the speech before it reaches the output.
 - Increasing the delay can improve filtering reliability, especially on slower systems or when processing more difficult audio.
-- The delay applies to the **PTT transmission path**; microphone audio while PTT is idle remains live passthrough.
+- The configured delay applies **once** to the filtered transmission path.
+- When no filtered transmission is active, microphone audio remains live passthrough.
 
 ### Blocked Words
 
-The **Blocked Words** list contains the words and phrases VoiceGuard will look for in Whisper's transcription while PTT is active.
+The **Blocked Words** list contains the words and phrases VoiceGuard will look for in Whisper's transcription during filtered transmission.
 
 To add a blocked word or phrase:
 
@@ -88,9 +117,9 @@ Each blocked word has its own playback-duration setting. Right-click the word an
 - **Word length** — plays the replacement for the detected offending word/event duration.
 - **Custom length** — plays the replacement for a selected duration from **0.1 to 5.0 seconds**, in 0.1-second increments.
 
-The selected duration is saved separately for each blocked word. Replacement playback continues through the selected duration even if PTT is released, then VoiceGuard returns to live passthrough.
+The selected duration is saved separately for each blocked word. Replacement playback continues through the selected duration even if the VoiceGuard Trigger Key is released, then VoiceGuard returns to live passthrough after the transmission drains.
 
-Replacement audio is converted and prepared before real-time censor playback, so codec conversion is not performed during live PTT processing. Consecutive blocked words remain separate events, allowing each replacement to use its own sound and playback setting.
+Replacement audio is converted and prepared before real-time censor playback, so codec conversion is not performed during live processing. Consecutive blocked words remain separate events, allowing each replacement to use its own sound and playback setting.
 
 ### Replacement Volume
 
@@ -128,14 +157,14 @@ Aliases are useful when pronunciation, background noise, microphone quality, or 
 
 ## Intel NPU / OpenVINO Acceleration
 
-**VoiceGuard 6.6** adds optional Intel OpenVINO NPU acceleration for Whisper speech recognition during PTT processing.
+**VoiceGuard 6.6** adds optional Intel OpenVINO NPU acceleration for Whisper speech recognition during filtered transmission.
 
 - Compatible Intel systems can use the **Intel NPU** for Whisper's OpenVINO encoder.
 - VoiceGuard automatically attempts the NPU path when the required Intel/OpenVINO runtime is available.
 - Systems without compatible NPU support continue to use the CPU Whisper runtime.
-- NPU acceleration is isolated to Whisper initialization and does not change VoiceGuard's audio routing, PTT, delay, or censor scheduling pipeline.
+- NPU acceleration is isolated to Whisper initialization and does not change VoiceGuard's audio routing, delay, or censor scheduling pipeline.
 - The startup log reports whether OpenVINO is selected and whether the NPU encoder was requested.
-- NPU acceleration only matters while VoiceGuard is analyzing PTT speech; idle live passthrough does not run Whisper.
+- NPU acceleration only matters while VoiceGuard is analyzing speech; idle live passthrough does not run Whisper.
 
 The NPU path is optional. VoiceGuard remains usable on systems that do not have a compatible Intel NPU.
 
@@ -169,7 +198,7 @@ Soundboard clips are not subject to the 5-second replacement-sound limit. Longer
 
 When a soundboard clip is triggered, VoiceGuard plays the clip through the configured voice-chat/output path so the game can receive it, while also playing a local copy through the computer's normal Windows playback device so **you can hear the soundboard audio through your headset**.
 
-The PTT key remains held for the duration of the soundboard transmission, including the configured VoiceGuard delay and a small safety margin. This keeps the game's voice input active for the complete clip instead of releasing PTT early.
+The Game PTT Key remains held for the duration of the soundboard transmission, including the configured VoiceGuard delay and a small safety margin. This keeps the game's voice input active for the complete clip instead of releasing PTT early.
 
 The configured Soundboard Listen Key acts as a **toggle while a soundboard clip is playing**. Pressing it a second time immediately:
 
@@ -197,7 +226,8 @@ The normal on-screen log remains focused on useful user-facing events, while the
 - Application and model paths
 - Whisper runtime and acceleration information
 - Audio device and engine information
-- PTT and soundboard activity
+- Game PTT and VoiceGuard Trigger activity
+- Soundboard activity
 - Recognition and filtering events
 - Exceptions and unexpected application errors
 
@@ -208,8 +238,11 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 ## Features
 
 - Designed primarily as a gaming profanity filter for PTT-based voice chat
-- Live microphone passthrough when PTT is not pressed
-- Delayed and filtered audio while PTT is pressed
+- Dedicated configurable VoiceGuard Trigger Key
+- Separate configurable Game PTT Key automatically controlled by VoiceGuard
+- Filtered transmission with the configured delay applied once
+- Automatic Game PTT hold through the complete delayed transmission
+- Live microphone passthrough when no filtered transmission is active
 - Local Whisper speech recognition
 - Optional Intel OpenVINO/NPU Whisper acceleration
 - CPU Whisper fallback
@@ -221,7 +254,7 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 - Per-word replacement volume up to 150%
 - Master output volume control up to 150%
 - Local replacement-sound Test playback
-- Adjustable PTT filtering delay
+- Adjustable filtering delay
 - Optional Soundboard feature with spoken triggers and aliases
 - Soundboard waveform selection and long-form audio playback
 - Soundboard audio playback through the user's headset while transmitting through the voice-chat output path
@@ -263,13 +296,13 @@ A typical gaming setup is:
 
 Configure the game or voice-chat application to use the VB-CABLE recording/input side as its microphone source.
 
-VoiceGuard is intended to sit between your microphone and the game's voice input. When PTT is idle, VoiceGuard passes the microphone audio through live. When you press PTT, the transmitted audio enters VoiceGuard's delayed filtering path.
+VoiceGuard is intended to sit between your microphone and the game's voice input. During a filtered transmission, the VoiceGuard Trigger Key starts private capture and VoiceGuard automatically controls the game's PTT key for the delayed, filtered output. When no filtered transmission is active, VoiceGuard passes the microphone audio through live.
 
 Personally I use VoiceMeeter Banana in conjunction with this to switch from direct Mic input and VG depending on the game to conserve resources
 
 ## Settings and Persistence
 
-VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, soundboard phrases and aliases, soundboard audio assignments, soundboard volumes, soundboard listen key, master output volume, delay, push-to-talk key, and selected audio devices.
+VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, soundboard phrases and aliases, soundboard audio assignments, soundboard volumes, soundboard listen key, master output volume, delay, **VoiceGuard Trigger Key**, **Game PTT Key**, and selected audio devices.
 
 Settings are stored under:
 
