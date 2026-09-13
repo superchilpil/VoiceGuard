@@ -4,14 +4,21 @@ VoiceGuard is a Windows voice-chat profanity filter designed primarily for **gam
 
 ## How VoiceGuard Works
 
-VoiceGuard uses a dedicated **VoiceGuard Trigger Key** to start the filtered transmission path. The VoiceGuard Trigger Key and the **Game PTT Key** are separate and independently configurable.
+VoiceGuard adds a short delay to your voice so it has time to check what you are saying before sending it to your game.
 
-- **VoiceGuard Trigger Key held:** VoiceGuard privately captures your microphone speech, delays it for Whisper analysis, and prepares the filtered audio for transmission. The trigger key itself is not sent to the game.
-- **Game PTT:** VoiceGuard automatically presses the configured Game PTT Key when the delayed audio is ready to begin transmitting. The game PTT remains held while the delayed/filtered audio is transmitted and while remaining queued audio drains.
-- **VoiceGuard Trigger Key released:** VoiceGuard finishes draining any remaining delayed audio and then releases the Game PTT Key.
-- **Idle:** When the VoiceGuard Trigger Key is not active and no delayed transmission is draining, VoiceGuard uses live microphone passthrough.
+When you press your **VoiceGuard Trigger Key**:
 
-This separates the key used to request a filtered transmission from the key the game uses for push-to-talk. VoiceGuard therefore does not depend on the user physically holding the game's PTT key during filtered speech.
+1. **Your microphone audio is captured** and held for the selected delay.
+2. **VoiceGuard listens to what you say** using speech recognition.
+3. If a blocked word is detected, VoiceGuard **removes it and plays your chosen replacement sound** instead.
+4. After the delay, the **filtered audio is sent to your game** through your normal voice-chat input.
+5. When you stop talking, VoiceGuard finishes sending the remaining delayed audio before releasing the game's **Push-to-Talk** key.
+
+This means the other players hear the cleaned-up version of what you said rather than the original audio.
+
+### In simple terms
+
+**You speak → VoiceGuard listens → Bad words are replaced → Clean audio is sent to the game.**
 
 ### Configurable Transmission Keys
 
