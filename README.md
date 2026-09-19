@@ -30,6 +30,10 @@ VoiceGuard provides separate settings for:
 
 All three keys are configurable independently and are saved with the VoiceGuard configuration.
 
+### Direct PTT Bypass
+
+The game's physical PTT key remains untouched by the VoiceGuard filtering trigger. Users can press the game's PTT key directly to communicate without engaging VoiceGuard's delayed filtering path. The separate VoiceGuard Trigger Key remains available whenever filtered transmission is desired.
+
 ### PTT and Elevated Applications
 
 VoiceGuard's global keyboard input and PTT injection can be affected when a **higher-privilege/elevated application** is in the foreground. For example, Windows Task Manager runs elevated and may prevent VoiceGuard from interacting with an elevated foreground application normally.
@@ -66,6 +70,7 @@ The latest Windows installer is available from the repository's GitHub Releases 
 9. VoiceGuard automatically presses the configured **Game PTT Key** when the delayed transmission begins. You do not need to physically press the game's PTT key.
 10. Release the VoiceGuard Trigger Key when finished speaking. VoiceGuard drains the remaining delayed audio and then releases the Game PTT Key.
 11. When no filtered transmission is active, VoiceGuard returns to live microphone passthrough.
+12. To bypass VoiceGuard's filtering workflow, press the game's own PTT key directly; that key is not intercepted by the VoiceGuard Trigger Key.
 
 ### Transmission Timing
 
@@ -222,6 +227,25 @@ Each soundboard clip can have its own playback volume from **0% to 150%**.
 
 The **Test** button beside each soundboard volume control previews the clip locally through the computer's normal Windows playback device. Test playback is not sent through the VoiceGuard/VB-CABLE output path.
 
+## Mode Overlay
+
+VoiceGuard includes an optional on-screen mode overlay that appears only while VoiceGuard is started. Use the **Overlay Settings** control to enable or disable it and configure its appearance.
+
+- Choose **Text** status or a compact **LED** indicator.
+- Place the overlay in any of eight positions: top-left, top-center, top-right, middle-left, middle-right, bottom-left, bottom-center, or bottom-right.
+- The LED uses a circular indicator with a soft radial fade and reduced size/transparency.
+- Overlay preferences are saved with the application settings.
+
+### Overlay Status Colors
+
+- **Green** — live microphone passthrough.
+- **Red** — filtering, speech analysis, or draining delayed audio.
+- **Purple** — soundboard playback.
+- **Yellow** — direct PTT bypass.
+- **Gray** — stopped/inactive.
+
+The overlay is a visual status aid; it does not change audio routing or the filtering behavior.
+
 ## Diagnostic Logging
 
 VoiceGuard includes a separate detailed diagnostic logger intended to make troubleshooting easier when users encounter problems.
@@ -247,6 +271,7 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 - Designed primarily as a gaming profanity filter for PTT-based voice chat
 - Dedicated configurable VoiceGuard Trigger Key
 - Separate configurable Game PTT Key automatically controlled by VoiceGuard
+- Direct physical Game PTT bypass that leaves the game's PTT key untouched by the VoiceGuard Trigger Key
 - Filtered transmission with the configured delay applied once
 - Automatic Game PTT hold through the complete delayed transmission
 - Live microphone passthrough when no filtered transmission is active
@@ -269,6 +294,7 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 - Second-press Soundboard key cancellation with immediate playback stop and PTT release
 - Soundboard volume control up to 150%
 - Local Soundboard Test playback
+- Optional text/LED mode overlay with eight position choices and saved settings
 - Global Start/Stop hotkey
 - Optional minimize-to-system-tray support
 - Optional start with Windows
@@ -303,13 +329,13 @@ A typical gaming setup is:
 
 Configure the game or voice-chat application to use the VB-CABLE recording/input side as its microphone source.
 
-VoiceGuard is intended to sit between your microphone and the game's voice input. During a filtered transmission, the VoiceGuard Trigger Key starts private capture and VoiceGuard automatically controls the game's PTT key for the delayed, filtered output. When no filtered transmission is active, VoiceGuard passes the microphone audio through live.
+VoiceGuard is intended to sit between your microphone and the game's voice input. During a filtered transmission, the VoiceGuard Trigger Key starts private capture and VoiceGuard automatically controls the game's PTT key for the delayed, filtered output. When no filtered transmission is active, VoiceGuard passes the microphone audio through live. The game's physical PTT key can also be pressed directly to bypass the VoiceGuard filtering trigger.
 
 Personally I use VoiceMeeter Banana in conjunction with this to switch from direct Mic input and VG depending on the game to conserve resources
 
 ## Settings and Persistence
 
-VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, soundboard phrases and aliases, soundboard audio assignments, soundboard volumes, soundboard listen key, master output volume, delay, **VoiceGuard Trigger Key**, **Game PTT Key**, and selected audio devices.
+VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, soundboard phrases and aliases, soundboard audio assignments, soundboard volumes, soundboard listen key, master output volume, delay, **VoiceGuard Trigger Key**, **Game PTT Key**, overlay enabled/position/style settings, and selected audio devices.
 
 Settings are stored under:
 
