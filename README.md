@@ -236,15 +236,19 @@ VoiceGuard includes an optional on-screen mode overlay that appears only while V
 - The LED uses a circular indicator with a soft radial fade and reduced size/transparency.
 - Overlay preferences are saved with the application settings.
 
-### Overlay Status Colors
+### LED Overlay Color Guide
 
-- **Green** — live microphone passthrough.
-- **Red** — filtering, speech analysis, or draining delayed audio.
-- **Purple** — soundboard playback.
-- **Yellow** — direct PTT bypass.
-- **Gray** — stopped/inactive.
+The LED color shows VoiceGuard's current operating mode:
 
-The overlay is a visual status aid; it does not change audio routing or the filtering behavior.
+| LED color | Meaning |
+| --- | --- |
+| 🟢 **Green** | Live microphone passthrough — VoiceGuard is passing microphone audio through normally. |
+| 🔴 **Red** | Filtering / analyzing / draining — VoiceGuard is processing filtered speech or finishing the delayed audio queue. |
+| 🟣 **Purple** | Soundboard playback — a soundboard clip is being transmitted. |
+| 🟡 **Yellow** | Direct PTT bypass — the game's physical PTT is being used without the VoiceGuard filtering trigger. |
+| ⚪ **Gray** | Stopped / inactive — VoiceGuard is not actively running its audio mode. |
+
+The overlay is a visual status aid; it does not change audio routing or filtering behavior.
 
 ## Diagnostic Logging
 
@@ -337,14 +341,4 @@ Personally I use VoiceMeeter Banana in conjunction with this to switch from dire
 
 VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, soundboard phrases and aliases, soundboard audio assignments, soundboard volumes, soundboard listen key, master output volume, delay, **VoiceGuard Trigger Key**, **Game PTT Key**, overlay enabled/position/style settings, and selected audio devices.
 
-Settings are stored under:
-
-    %LOCALAPPDATA%\\VoiceGuard\\config.json
-
-## License
-
-VoiceGuard is licensed under the **MIT License**.
-
-See the [LICENSE](LICENSE) file for the complete license text.
-
-Copyright (c) 2026 superchilpil.
+Settings are stored in the user's local application data so they persist between launches.
