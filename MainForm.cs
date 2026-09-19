@@ -80,6 +80,10 @@ public sealed class MainForm : Form
     private int draggingReplacementIndex = -1;
     private readonly TextBox log = new();
     private readonly Label mode = new();
+    private ModeOverlayForm? modeOverlay;
+    private bool overlayEnabled = true;
+    private string overlayPosition = "TopCenter";
+    private string overlayStyle = "Text";
     private readonly Label status = new();
     private readonly Button start = new();
     private readonly CheckBox startWithWindows = new();
@@ -152,6 +156,9 @@ public sealed class MainForm : Form
         public string? OutputDevice { get; set; }
         public bool StartWithWindows { get; set; }
         public bool MinimizeToTray { get; set; }
+        public bool OverlayEnabled { get; set; } = true;
+        public string OverlayPosition { get; set; } = "TopCenter";
+        public string OverlayStyle { get; set; } = "Text";
         public string StartStopHotkey { get; set; } = "Control, Alt, V";
         public string VoiceGuardTriggerKey { get; set; } = Keys.Oemcomma.ToString();
     }
@@ -186,14 +193,24 @@ public sealed class MainForm : Form
         SendMessage(Handle, WM_SETICON, ICON_SMALL, taskbarSmallIcon.Handle);
     }
 
+    private const int DWMWA_CAPTION_COLOR = 35;
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        try { int purple = 0x00FF4E9A; _ = DwmSetWindowAttribute(Handle, DWMWA_CAPTION_COLOR, ref purple, sizeof(int)); } catch { }
+    }
+
     public MainForm()
     {
         ApplyWindowAndTaskbarIcon();
 
-        Text = "VoiceGuard — Stage 6.6.5";
-        Width = 1600;
-        Height = 900;
-        MinimumSize = new Size(1000, 620);
+        Text = "VoiceGuard — 6.7";
+        Width = 1440;
+        Height = 850;
+        MinimumSize = new Size(1440, 850);
         WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
@@ -251,6 +268,10 @@ public sealed class MainForm : Form
             Height = 1,
             BackColor = Border
         };
+        var overlaySettingsButton = new Button { Text = "Overlay settings", Size = new Size(126, 32), Anchor = AnchorStyles.Top | AnchorStyles.Right, Location = new Point(Width - 190, 12) };
+        StyleButton(overlaySettingsButton, false);
+        overlaySettingsButton.Click += (_, _) => ShowOverlaySettings();
+        header.Controls.Add(overlaySettingsButton);
         header.Controls.Add(headerLine);
 
         // The four-section working area is confined to row 2 of root.
@@ -306,7 +327,7 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // VoiceGuard trigger key
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // soundboard listen key
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // start/stop hotkey
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); // startup checkboxes
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 52)); // startup checkboxes (two rows)
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); // mode
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
@@ -775,6 +796,7 @@ public sealed class MainForm : Form
 
         InitializeTrayIcon();
         FormClosing += MainForm_FormClosing;
+        Shown += (_, __) => { /* overlay is created only when VoiceGuard starts */ };
         SizeChanged += (_, _) =>
         {
             if (WindowState == FormWindowState.Minimized && minimizeToTray.Checked)
@@ -964,6 +986,9 @@ public sealed class MainForm : Form
                 loadingPersistence = false;
                 return;
             }
+            overlayEnabled = config.OverlayEnabled;
+            overlayPosition = config.OverlayPosition ?? "TopCenter";
+            overlayStyle = config.OverlayStyle ?? "Text";
 
             words.Items.Clear();
             blockedWordAliases.Clear();
@@ -1138,6 +1163,9 @@ public sealed class MainForm : Form
                 OutputDevice = output.SelectedItem is AudioDeviceInfo outputDevice ? outputDevice.Name : null,
                 StartWithWindows = startWithWindows.Checked,
                 MinimizeToTray = minimizeToTray.Checked,
+                OverlayEnabled = overlayEnabled,
+                OverlayPosition = overlayPosition,
+                OverlayStyle = overlayStyle,
                 StartStopHotkey = FormatHotkeyForConfig(startStopHotkey.Tag is Keys startStopKey ? startStopKey : Keys.Control | Keys.Alt | Keys.V),
                 VoiceGuardTriggerKey = (voiceGuardTriggerKeyBox.Tag is Keys triggerKey ? triggerKey : Keys.Oemcomma).ToString()
             };
@@ -1204,6 +1232,7 @@ public sealed class MainForm : Form
 
     private void MainForm_FormClosing(object? sender, FormClosingEventArgs e)
     {
+        try { modeOverlay?.Hide(); modeOverlay?.Dispose(); modeOverlay = null; } catch { }
         if (!exitingApplication && minimizeToTray.Checked)
         {
             e.Cancel = true;
@@ -2592,7 +2621,17 @@ public sealed class MainForm : Form
             AddLog($"PTT HOOK STARTING — key={key}");
             hook = new PttKeyHook(key, down =>
             {
-                AddLog($"PTT {(down ? "DOWN" : "UP")} — key={key}");
+                AddLog($"GAME PTT {(down ? "DOWN" : "UP")} — key={key}");
+                // Z is reserved for direct/live game callouts. Idle mode already
+                // routes the microphone through the live passthrough; do not
+                // start or stop the delayed VoiceGuard capture/drain state here.
+                if (key == Keys.Z)
+                {
+                    AddLog($"Z LIVE BYPASS {(down ? "ACTIVE" : "RELEASED")} — delayed filter state unchanged");
+                    SetMode(down ? "Z LIVE BYPASS" : "LIVE");
+                    SetStatus(down ? "Z held — live microphone passthrough; filtering not engaged." : "READY — live microphone passthrough.");
+                    return;
+                }
                 engine?.SetPtt(down);
                 // Do not reset the detector on PTT release. AudioEngine now
                 // supplies the global capture timestamp whenever a PTT segment
@@ -2776,6 +2815,18 @@ public sealed class MainForm : Form
         log.AppendText($"[{DateTime.Now:HH:mm:ss}] {userLog}{Environment.NewLine}");
     }
 
+    private void ShowOverlaySettings()
+    {
+        using var dlg = new Form { Text = "Mode overlay settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(340, 190), MaximizeBox = false, MinimizeBox = false, BackColor = Surface, ForeColor = TextMain };
+        var enabled = new CheckBox { Text = "Enable mode overlay", Checked = overlayEnabled, AutoSize = true, Location = new Point(16, 16), ForeColor = TextMain };
+        var position = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 58), Width = 300 };
+        position.Items.AddRange(new object[] { "TopLeft", "TopCenter", "TopRight", "MiddleLeft", "MiddleRight", "BottomLeft", "BottomCenter", "BottomRight" }); position.SelectedItem = overlayPosition; if (position.SelectedIndex < 0) position.SelectedIndex = 1;
+        var style = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 100), Width = 300 }; style.Items.AddRange(new object[] { "Text", "LED" }); style.SelectedItem = overlayStyle; if (style.SelectedIndex < 0) style.SelectedIndex = 0;
+        var save = new Button { Text = "Save", Location = new Point(236, 145), Size = new Size(80, 30) }; StyleButton(save, true);
+        save.Click += (_, _) => { overlayEnabled = enabled.Checked; overlayPosition = position.SelectedItem?.ToString() ?? "TopCenter"; overlayStyle = style.SelectedItem?.ToString() ?? "Text"; if (modeOverlay != null) { if (overlayEnabled && engine != null) { modeOverlay.Configure(overlayPosition, overlayStyle); modeOverlay.Show(); } else modeOverlay.Hide(); } SavePersistence(); dlg.DialogResult = DialogResult.OK; dlg.Close(); };
+        dlg.Controls.AddRange(new Control[] { enabled, position, style, save }); dlg.ShowDialog(this);
+    }
+
     private void SetMode(string text)
     {
         if (IsDisposed) return;
@@ -2785,6 +2836,14 @@ public sealed class MainForm : Form
             return;
         }
         mode.Text = "MODE: " + text;
+        if (engine != null && overlayEnabled)
+        {
+            modeOverlay ??= new ModeOverlayForm();
+            modeOverlay.Configure(overlayPosition, overlayStyle);
+            if (!modeOverlay.Visible) modeOverlay.Show();
+            modeOverlay.SetMode(text);
+        }
+        else if (modeOverlay != null) modeOverlay.Hide();
     }
 
     private void SetStatus(string text)
