@@ -246,9 +246,7 @@ The LED color shows VoiceGuard's current operating mode:
 | 🔴 **Red** | Filtering / analyzing / draining — VoiceGuard is processing filtered speech or finishing the delayed audio queue. |
 | 🟣 **Purple** | Soundboard playback — a soundboard clip is being transmitted. |
 | 🟡 **Yellow** | Direct PTT bypass — the game's physical PTT is being used without the VoiceGuard filtering trigger. |
-| ⚪ **Gray** | Stopped / inactive — VoiceGuard is not actively running its audio mode. |
 
-The overlay is a visual status aid; it does not change audio routing or filtering behavior.
 
 ## Diagnostic Logging
 
