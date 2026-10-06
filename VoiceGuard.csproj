@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -12,7 +12,7 @@
     <PublishTrimmed>false</PublishTrimmed>
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>VoiceGuard.ico</ApplicationIcon>
-    <Version>6.7</Version>
+    <Version>6.7.0</Version>
     <AssemblyVersion>6.7.0.0</AssemblyVersion>
     <FileVersion>6.7.0.0</FileVersion>
   </PropertyGroup>
@@ -32,3 +32,4 @@
     <PackageReference Include="OpenVINO.runtime.win" Version="2024.4.0.1" />
   </ItemGroup>
 </Project>
+
