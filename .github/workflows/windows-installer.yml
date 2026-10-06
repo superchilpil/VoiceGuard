@@ -60,10 +60,7 @@ jobs:
 
   build-windows-installer:
     needs: bump-version
-    if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')) &&
-      (needs.bump-version.result == 'success' || needs.bump-version.result == 'skipped')
+    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && needs.bump-version.result == 'success') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) }}
     runs-on: windows-latest
     steps:
       - name: Checkout
