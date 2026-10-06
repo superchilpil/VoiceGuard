@@ -12,9 +12,9 @@
     <PublishTrimmed>false</PublishTrimmed>
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>VoiceGuard.ico</ApplicationIcon>
-    <Version>6.7.1</Version>
-    <AssemblyVersion>6.7.1.0</AssemblyVersion>
-    <FileVersion>6.7.1.0</FileVersion>
+    <Version>6.7.2</Version>
+    <AssemblyVersion>6.7.2.0</AssemblyVersion>
+    <FileVersion>6.7.2.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,5 +32,6 @@
     <PackageReference Include="OpenVINO.runtime.win" Version="2024.4.0.1" />
   </ItemGroup>
 </Project>
+
 
 
