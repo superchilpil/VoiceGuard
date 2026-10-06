@@ -208,7 +208,7 @@ Soundboard clips are not subject to the 5-second replacement-sound limit. Longer
 
 ### Soundboard Playback
 
-When a soundboard clip is triggered, VoiceGuard plays the clip through the configured voice-chat/output path so the game can receive it, while also playing a local copy through the computer's normal Windows playback device so **you can hear the soundboard audio through your headset**.
+When a soundboard clip is triggered, VoiceGuard plays the clip through the configured voice-chat/output path so the game can receive it, while also playing a local copy through the computer's normal Windows playback device so **you can hear the same soundboard audio through your headset at the same time the delayed voice-chat output reaches the game**. The local playback is synchronized to the configured VoiceGuard delay instead of starting immediately.
 
 The Game PTT Key remains held for the duration of the soundboard transmission, including the configured VoiceGuard delay and a small safety margin. This keeps the game's voice input active for the complete clip instead of releasing PTT early.
 
@@ -306,11 +306,20 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 
 ## Building
 
-For a self-contained Windows x64 publish and installer build:
+For a local self-contained Windows x64 publish and installer build:
 
     BUILD_INSTALLER.bat
 
-`BUILD_INSTALLER.bat` is the project's single build script. The published application intentionally keeps Whisper's native runtime files in the `runtimes` directory. Do not convert the application to a single-file publish, because Whisper's native runtime layout is required.
+`BUILD_INSTALLER.bat` is the project's local one-command build script. The published application intentionally keeps Whisper's native runtime files in the `runtimes` directory. Do not convert the application to a single-file publish, because Whisper's native runtime layout is required.
+
+### Automated GitHub Windows Installer
+
+The repository also includes a GitHub Actions workflow at `.github/workflows/windows-installer.yml`.
+
+- Run it manually from the repository's **Actions** tab to create a Windows installer artifact.
+- Push a version tag such as `v6.7` to automatically build the installer and attach it to a GitHub Release.
+- The workflow installs the .NET 8 SDK and Inno Setup on the Windows runner, publishes the self-contained x64 application, verifies the Whisper native runtime files, builds the Inno Setup installer, and uploads the finished installer.
+- Tagged releases use the tag version for the generated installer filename and release title.
 
 ## Models
 
