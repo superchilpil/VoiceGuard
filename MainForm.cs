@@ -1684,12 +1684,15 @@ public sealed class MainForm : Form
                 return;
             }
 
-            StartSoundboardHeadsetPlayback(phrase);
-            soundboardPlaybackActive = true;
+            // The game receives the soundboard clip through VoiceGuard's delayed
+            // output timeline. Start the local headset copy on the same delay so
+            // the user hears the clip at the same time the game receives it.
             soundboardPlaybackCts?.Cancel();
             soundboardPlaybackCts?.Dispose();
             soundboardPlaybackCts = new CancellationTokenSource();
             var playbackToken = soundboardPlaybackCts.Token;
+            soundboardPlaybackActive = true;
+            _ = StartSoundboardHeadsetPlaybackAsync(phrase, currentEngine.DelaySeconds + 0.020, playbackToken);
 
             // The game must keep receiving the configured PTT key for the entire
             // soundboard clip, plus the configured VoiceGuard delay and a small
@@ -1744,14 +1747,19 @@ public sealed class MainForm : Form
         }
     }
 
-    private void StartSoundboardHeadsetPlayback(string phrase)
+    private async Task StartSoundboardHeadsetPlaybackAsync(string phrase, double delaySeconds, CancellationToken cancellationToken)
     {
-        StopSoundboardHeadsetPlayback();
-        string? path = GetSoundboardSound(phrase);
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
-
         try
         {
+            if (delaySeconds > 0)
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+
+            if (cancellationToken.IsCancellationRequested || !soundboardPlaybackActive)
+                return;
+
+            string? path = GetSoundboardSound(phrase);
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
+
             double volume = Math.Clamp(GetSoundboardVolume(phrase) * (outputVolume.Value / 100.0), 0.0, 1.5);
             var reader = new AudioFileReader(path);
             var provider = new GainSampleProvider(reader, volume);
@@ -1760,8 +1768,19 @@ public sealed class MainForm : Form
             soundboardHeadsetOutput = player;
             player.PlaybackStopped += SoundboardHeadsetPlaybackStopped;
             player.Init(provider);
+
+            if (cancellationToken.IsCancellationRequested || !soundboardPlaybackActive)
+            {
+                StopSoundboardHeadsetPlayback();
+                return;
+            }
+
             player.Play();
-            AddLog($"SOUNDBOARD HEADSET PLAYBACK — {Path.GetFileName(path)} | volume={volume:P0}");
+            AddLog($"SOUNDBOARD HEADSET PLAYBACK — {Path.GetFileName(path)} | syncedDelay={delaySeconds:0.000}s | volume={volume:P0}");
+        }
+        catch (OperationCanceledException)
+        {
+            // Playback was cancelled before the synchronized local copy started.
         }
         catch (Exception ex)
         {
