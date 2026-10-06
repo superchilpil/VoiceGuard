@@ -291,7 +291,7 @@ public sealed class MainForm : Form
         updateButton.Size = new Size(126, 32);
         updateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         updateButton.Location = new Point(Width - 326, 12);
-        updateButton.Visible = false;
+        updateButton.Visible = true;
         StyleButton(updateButton, false);
         updateButton.Click += async (_, _) => await StartUpdateAsync();
         header.Controls.Add(updateButton);
