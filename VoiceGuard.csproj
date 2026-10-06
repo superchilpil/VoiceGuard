@@ -12,6 +12,9 @@
     <PublishTrimmed>false</PublishTrimmed>
     <Prefer32Bit>false</Prefer32Bit>
     <ApplicationIcon>VoiceGuard.ico</ApplicationIcon>
+    <Version>6.7</Version>
+    <AssemblyVersion>6.7.0.0</AssemblyVersion>
+    <FileVersion>6.7.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
