@@ -10,15 +10,11 @@ permissions:
   contents: write
 
 jobs:
-  bump-version:
-    if: github.event_name == 'workflow_dispatch'
+  build-windows-installer:
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref_name }}
         with:
           fetch-depth: 0
 
@@ -50,7 +46,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add VoiceGuard.csproj
           git commit -m "Bump VoiceGuard version to $env:VOICEGUARD_VERSION"
-          git push origin main
+          git push origin HEAD:main
 
       - name: Create version tag
         shell: powershell
@@ -58,52 +54,39 @@ jobs:
           git tag "v$env:VOICEGUARD_VERSION"
           git push origin "v$env:VOICEGUARD_VERSION"
 
-  build-windows-installer:
-    needs: bump-version
-    if: ${{ always() && ((github.event_name == 'workflow_dispatch' && needs.bump-version.result == 'success') || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) }}
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+
       - name: Install Inno Setup 6
         shell: powershell
         run: choco install innosetup --no-progress -y
+
       - name: Restore
         run: dotnet restore VoiceGuard.csproj
+
       - name: Publish self-contained Windows x64
-        run: >
-          dotnet publish VoiceGuard.csproj
-          -c Release
-          -r win-x64
-          --self-contained true
-          /p:PublishSingleFile=false
-          /p:PublishTrimmed=false
-          /p:DebugType=None
-          /p:DebugSymbols=false
-          -o publish
+        shell: powershell
+        run: |
+          dotnet publish VoiceGuard.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=false /p:PublishTrimmed=false /p:DebugType=None /p:DebugSymbols=false -o publish
+
       - name: Verify published runtime
         shell: powershell
         run: |
           if (-not (Test-Path "publish\VoiceGuard.exe")) { throw "VoiceGuard.exe was not produced." }
           $required = @("publish\runtimes\win-x64\whisper.dll","publish\runtimes\win-x64\ggml-whisper.dll","publish\runtimes\win-x64\ggml-base-whisper.dll","publish\runtimes\win-x64\ggml-cpu-whisper.dll")
           foreach ($file in $required) { if (-not (Test-Path $file)) { throw "Required Whisper runtime file is missing: $file" } }
+
       - name: Prepare installer definition
         shell: powershell
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $version = (Select-String -Path "VoiceGuard.csproj" -Pattern '<Version>([^<]+)</Version>').Matches.Groups[1].Value
-          } else {
-            $version = "${{ github.ref_name }}".Substring(1)
-          }
+          $version = $env:VOICEGUARD_VERSION
           $iss = Get-Content "VoiceGuard_Installer.iss" -Raw
-          $iss = $iss -replace '#define MyAppVersion "[^"]+"', ('#define MyAppVersion "' + $version + '" ')
+          $iss = $iss -replace '#define MyAppVersion "[^"]+"', ('#define MyAppVersion "' + $version + '"')
           $iss = $iss -replace 'OutputBaseFilename=VoiceGuard_Setup_[^\r\n]+', ('OutputBaseFilename=VoiceGuard_Setup_' + $version)
           $iss | Set-Content "VoiceGuard_Installer_CI.iss" -Encoding UTF8
-          "VOICEGUARD_VERSION=$version" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build Windows installer
         shell: powershell
         run: |
@@ -112,12 +95,14 @@ jobs:
           if (-not (Test-Path $iscc)) { throw "Inno Setup compiler was not found." }
           & $iscc "VoiceGuard_Installer_CI.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE." }
+
       - name: Verify installer
         shell: powershell
         run: |
-          $installer = "installer\VoiceGuard_Setup_${env:VOICEGUARD_VERSION}.exe"
+          $installer = "installer\VoiceGuard_Setup_$env:VOICEGUARD_VERSION.exe"
           if (-not (Test-Path $installer)) { throw "Installer was not created: $installer" }
           Get-Item $installer | Format-List FullName,Length
+
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -125,13 +110,12 @@ jobs:
           path: installer/VoiceGuard_Setup_*.exe
           if-no-files-found: error
           retention-days: 30
-      - name: Create GitHub release for version tag
-        if: startsWith(github.ref, 'refs/tags/v')
+
+      - name: Create GitHub release
+        if: \${{ success() }}
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: \${{ github.token }}
         shell: powershell
         run: |
-          $installer = "installer\VoiceGuard_Setup_${env:VOICEGUARD_VERSION}.exe"
-          gh release create "${{ github.ref_name }}" $installer `
-            --title "VoiceGuard $env:VOICEGUARD_VERSION" `
-            --generate-notes
+          $installer = "installer\VoiceGuard_Setup_$env:VOICEGUARD_VERSION.exe"
+          gh release create "v$env:VOICEGUARD_VERSION" $installer --title "VoiceGuard $env:VOICEGUARD_VERSION" --generate-notes
