@@ -90,6 +90,20 @@ public sealed class MainForm : Form
     private readonly CheckBox minimizeToTray = new();
     private readonly TextBox startStopHotkey = new();
     private readonly NotifyIcon trayIcon = new();
+    private readonly Button updateButton = new();
+    private static readonly HttpClient UpdateHttpClient = CreateUpdateHttpClient();
+    private const string GitHubLatestReleaseUrl = "https://api.github.com/repos/superchilpil/VoiceGuard/releases/latest";
+    private string? availableUpdateVersion;
+    private string? availableUpdateUrl;
+    private string? availableUpdateAssetName;
+
+    private static HttpClient CreateUpdateHttpClient()
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("VoiceGuard-Updater");
+        client.Timeout = TimeSpan.FromMinutes(10);
+        return client;
+    }
     private readonly ContextMenuStrip trayMenu = new();
 
     private AudioEngine? engine;
@@ -272,7 +286,20 @@ public sealed class MainForm : Form
         StyleButton(overlaySettingsButton, false);
         overlaySettingsButton.Click += (_, _) => ShowOverlaySettings();
         header.Controls.Add(overlaySettingsButton);
+
+        updateButton.Text = "Check for updates";
+        updateButton.Size = new Size(126, 32);
+        updateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        updateButton.Location = new Point(Width - 326, 12);
+        updateButton.Visible = false;
+        StyleButton(updateButton, false);
+        updateButton.Click += async (_, _) => await StartUpdateAsync();
+        header.Controls.Add(updateButton);
+
+        headerLine.BringToFront();
         header.Controls.Add(headerLine);
+
+        Shown += async (_, _) => await CheckForUpdatesAsync();
 
         // The four-section working area is confined to row 2 of root.
         var mainHost = new Panel
@@ -2832,6 +2859,124 @@ public sealed class MainForm : Form
         }
 
         log.AppendText($"[{DateTime.Now:HH:mm:ss}] {userLog}{Environment.NewLine}");
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            using var response = await UpdateHttpClient.GetAsync(GitHubLatestReleaseUrl);
+            if (!response.IsSuccessStatusCode) return;
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var release = await JsonDocument.ParseAsync(stream);
+
+            var tag = release.RootElement.TryGetProperty("tag_name", out var tagElement)
+                ? tagElement.GetString() : null;
+            if (string.IsNullOrWhiteSpace(tag)) return;
+
+            var remoteText = tag.Trim().TrimStart('v', 'V');
+            if (!Version.TryParse(remoteText, out var remoteVersion)) return;
+
+            var current = typeof(MainForm).Assembly.GetName().Version ?? new Version(0, 0);
+            if (remoteVersion <= current) return;
+
+            string? assetUrl = null;
+            string? assetName = null;
+            if (release.RootElement.TryGetProperty("assets", out var assets))
+            {
+                foreach (var asset in assets.EnumerateArray())
+                {
+                    var name = asset.TryGetProperty("name", out var n) ? n.GetString() : null;
+                    var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(url) &&
+                        name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                        name.Contains("VoiceGuard_Setup_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        assetName = name;
+                        assetUrl = url;
+                        break;
+                    }
+                }
+            }
+
+            if (assetUrl == null || assetName == null) return;
+
+            availableUpdateVersion = remoteText;
+            availableUpdateUrl = assetUrl;
+            availableUpdateAssetName = assetName;
+
+            if (!IsDisposed && IsHandleCreated)
+                BeginInvoke(() => { updateButton.Text = $"Update to {remoteText}"; updateButton.Visible = true; });
+        }
+        catch
+        {
+            // GitHub being unavailable must never affect normal VoiceGuard startup.
+        }
+    }
+
+    private async Task StartUpdateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(availableUpdateVersion) ||
+            string.IsNullOrWhiteSpace(availableUpdateUrl) ||
+            string.IsNullOrWhiteSpace(availableUpdateAssetName))
+        {
+            updateButton.Text = "Checking...";
+            updateButton.Enabled = false;
+            await CheckForUpdatesAsync();
+            updateButton.Enabled = true;
+            return;
+        }
+
+        var version = availableUpdateVersion;
+        if (MessageBox.Show(
+            $"VoiceGuard {version} is available.\r\n\r\nDownload and install it now? VoiceGuard will close while the update installs.",
+            "VoiceGuard update available",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information) != DialogResult.Yes)
+            return;
+
+        updateButton.Enabled = false;
+        updateButton.Text = "Downloading...";
+
+        try
+        {
+            var tempDirectory = Path.Combine(Path.GetTempPath(), "VoiceGuardUpdate");
+            Directory.CreateDirectory(tempDirectory);
+            var installerPath = Path.Combine(tempDirectory, availableUpdateAssetName);
+
+            using (var response = await UpdateHttpClient.GetAsync(availableUpdateUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                await using var source = await response.Content.ReadAsStreamAsync();
+                await using var destination = File.Create(installerPath);
+                await source.CopyToAsync(destination);
+            }
+
+            if (!File.Exists(installerPath) || new FileInfo(installerPath).Length < 100_000)
+                throw new InvalidOperationException("The downloaded installer appears to be incomplete.");
+
+            if (engine != null) StopEngine();
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = installerPath,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            exitingApplication = true;
+            System.Diagnostics.Process.Start(psi);
+            Application.Exit();
+        }
+        catch (Exception ex)
+        {
+            exitingApplication = false;
+            updateButton.Enabled = true;
+            updateButton.Text = $"Update to {version}";
+            MessageBox.Show($"VoiceGuard could not install the update.\r\n\r\n{ex.Message}",
+                "VoiceGuard update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void ShowOverlaySettings()
