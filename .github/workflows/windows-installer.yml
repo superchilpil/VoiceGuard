@@ -150,4 +150,9 @@ jobs:
           $installer = "installer\VoiceGuard_Setup_$env:VOICEGUARD_VERSION.exe"
           gh auth status
           if ($LASTEXITCODE -ne 0) { throw "GitHub CLI authentication failed." }
-          gh release create "v$env:VOICEGUARD_VERSION" $installer --title "VoiceGuard $env:VOICEGUARD_VERSION" --notes-file "release-notes.md"
+          if (-not (Test-Path "RELEASE_NOTES.md")) {
+            throw "RELEASE_NOTES.md is missing. Add the user-facing release notes before creating a release."
+          }
+          $draftArgs = @()
+          if ("${{ inputs.draft_release }}" -eq "true") { $draftArgs += "--draft" }
+          gh release create "v$env:VOICEGUARD_VERSION" $installer --title "VoiceGuard $env:VOICEGUARD_VERSION" --notes-file "RELEASE_NOTES.md" @draftArgs
