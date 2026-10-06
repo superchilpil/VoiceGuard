@@ -248,6 +248,18 @@ The LED color shows VoiceGuard's current operating mode:
 | 🟡 **Yellow** | Direct PTT bypass — the game's physical PTT is being used without the VoiceGuard filtering trigger. |
 
 
+## In-App Updates
+
+VoiceGuard now includes an **Update** control in the main window that checks the GitHub Releases feed for a newer version.
+
+- The control is always available as **Check for updates**, so you can manually check for a newer release at any time.
+- VoiceGuard also checks for a newer release when the application starts.
+- When a newer release is available, the control changes to **Update to X.Y.Z**.
+- The updater asks for confirmation before downloading and installing the new release.
+- The installer is downloaded automatically and launched with the required Windows elevation.
+- VoiceGuard closes before the installer replaces the installed application.
+- If GitHub cannot be reached, the update check fails silently without preventing VoiceGuard from starting.
+
 ## Diagnostic Logging
 
 VoiceGuard includes a separate detailed diagnostic logger intended to make troubleshooting easier when users encounter problems.
@@ -291,11 +303,12 @@ Diagnostic logs are rotated when they reach the configured size limit so they do
 - Adjustable filtering delay
 - Optional Soundboard feature with spoken triggers and aliases
 - Soundboard waveform selection and long-form audio playback
-- Soundboard audio playback through the user's headset while transmitting through the voice-chat output path
+- Soundboard audio playback through the user's headset synchronized with the configured VoiceGuard delay
 - Soundboard PTT remains held for the complete transmission
 - Second-press Soundboard key cancellation with immediate playback stop and PTT release
 - Soundboard volume control up to 150%
 - Local Soundboard Test playback
+- In-app GitHub release update checking and one-click installer update
 - Optional text/LED mode overlay with eight position choices and saved settings
 - Global Start/Stop hotkey
 - Optional minimize-to-system-tray support
@@ -318,6 +331,8 @@ The repository also includes a GitHub Actions workflow at `.github/workflows/win
 
 - Run it manually from the repository's **Actions** tab to create a Windows installer artifact.
 - Push a version tag such as `v6.7` to automatically build the installer and attach it to a GitHub Release.
+- The workflow automatically increments the patch version before building a manual release.
+- It creates and pushes the matching version tag, builds the installer, and attaches it to a GitHub Release.
 - The workflow installs the .NET 8 SDK and Inno Setup on the Windows runner, publishes the self-contained x64 application, verifies the Whisper native runtime files, builds the Inno Setup installer, and uploads the finished installer.
 - Tagged releases use the tag version for the generated installer filename and release title.
 
