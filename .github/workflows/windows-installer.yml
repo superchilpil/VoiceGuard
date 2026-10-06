@@ -121,10 +121,11 @@ jobs:
           retention-days: 30
 
       - name: Create GitHub release
-        if: \${{ success() }}
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: powershell
         run: |
           $installer = "installer\VoiceGuard_Setup_$env:VOICEGUARD_VERSION.exe"
+          gh auth status
+          if ($LASTEXITCODE -ne 0) { throw "GitHub CLI authentication failed." }
           gh release create "v$env:VOICEGUARD_VERSION" $installer --title "VoiceGuard $env:VOICEGUARD_VERSION" --generate-notes
