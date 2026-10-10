@@ -1098,6 +1098,23 @@ public sealed class MainForm : Form
                 soundboard.Items.Add(trigger);
             }
 
+            // Restore aliases only after the corresponding soundboard phrases have
+            // been loaded, matching keys case-insensitively to the canonical trigger.
+            foreach (var pair in config.SoundboardAliases ?? new Dictionary<string, List<string>>())
+            {
+                var actualPhrase = soundboardSounds.Keys.FirstOrDefault(
+                    phrase => string.Equals(phrase, pair.Key?.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrWhiteSpace(actualPhrase))
+                    continue;
+
+                soundboardAliases[actualPhrase] = (pair.Value ?? new List<string>())
+                    .Where(alias => !string.IsNullOrWhiteSpace(alias))
+                    .Select(alias => alias.Trim())
+                    .Where(alias => !string.Equals(alias, actualPhrase, StringComparison.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
             if (config.OutputVolumePercent >= 0 && config.OutputVolumePercent <= 150)
                 outputVolume.Value = (int)Math.Round(config.OutputVolumePercent);
             outputVolumeValue.Text = $"{outputVolume.Value}%";
