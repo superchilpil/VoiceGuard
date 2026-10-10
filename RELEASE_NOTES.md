@@ -1,3 +1,7 @@
+## Soundboard Alias Persistence
+- Fixed soundboard aliases not being restored when VoiceGuard starts.
+- Saved aliases now load against their matching soundboard clips and remain available for speech detection.
+
 ## What's New
 
 ### In-App Updates
