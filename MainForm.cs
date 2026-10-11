@@ -1020,7 +1020,7 @@ public sealed class MainForm : Form
             input.SetBounds(18, 54, width, 32);
             inputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
             inputDropButton.BringToFront();
-            inputTopMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
+            inputTopMask.SetBounds(18, 54, Math.Max(1, width - 30), 6);
             inputTopMask.BringToFront();
             inputDropButton.BringToFront();
         }
@@ -1044,7 +1044,7 @@ public sealed class MainForm : Form
             output.SetBounds(18, 54, width, 32);
             outputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
             outputDropButton.BringToFront();
-            outputTopMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
+            outputTopMask.SetBounds(18, 54, Math.Max(1, width - 30), 6);
             outputTopMask.BringToFront();
             outputDropButton.BringToFront();
         }
