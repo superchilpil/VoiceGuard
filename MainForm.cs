@@ -386,6 +386,7 @@ public sealed class MainForm : Form
         };
         var navButtons = new List<Button>();
         var navLabels = new[] { "Dashboard & Audio", "Word Filter", "Soundboard", "Logs" };
+        Action<int> showPage = _ => { };
         for (var i = 0; i < navLabels.Length; i++)
         {
             var pageIndex = i;
@@ -399,13 +400,11 @@ public sealed class MainForm : Form
             };
             nav.FlatAppearance.BorderSize = 0;
             nav.FlatAppearance.MouseOverBackColor = Surface2;
-            nav.Click += (_, _) => ShowPage(pageIndex);
+            nav.Click += (_, _) => showPage(pageIndex);
             sidebar.Controls.Add(nav);
             navButtons.Add(nav);
         }
         var selectedPage = 0;
-        Action<int>? showPage = null;
-        void ShowPage(int pageIndex) => showPage?.Invoke(pageIndex);
 
         // LEFT: controls are explicitly arranged top-to-bottom in the
         // requested order instead of relying on DockStyle.Top z-order.
@@ -927,7 +926,7 @@ public sealed class MainForm : Form
             statusBadge.ForeColor = engine != null ? Success : TextDim;
             Text = "VoiceGuard — " + navLabels[selectedPage];
         };
-        ShowPage(0);
+        showPage(0);
 
 
         delay.ValueChanged += (_, _) => SavePersistence();
