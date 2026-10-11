@@ -460,7 +460,7 @@ public sealed class MainForm : Form
         };
         dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
         dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-        dashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, 178));
+        dashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
         dashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
         dashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         main.Controls.Add(dashboard, 0, 0);
@@ -530,10 +530,16 @@ public sealed class MainForm : Form
         {
             var contentWidth = Math.Max(120, heroCard.ClientSize.Width - 40);
             foreach (Control item in heroCard.Controls)
-                if (item is Label label) label.Width = contentWidth;
-            start.SetBounds(Math.Max(20, contentWidth - 240), 146, Math.Min(220, contentWidth), 40);
+            {
+                if (item is Label label)
+                    label.Width = item.Name == "dashboardStatus"
+                        ? Math.Max(120, contentWidth - 250)
+                        : contentWidth;
+            }
+            // Keep the action fully inside the status card and to the right of the status copy.
+            start.SetBounds(Math.Max(20, heroCard.ClientSize.Width - 240), 122, 220, 40);
         };
-        start.SetBounds(240, 146, 220, 40);
+        start.SetBounds(240, 122, 220, 40);
         start.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         ApplyRoundedButton(start, 10);
 
@@ -831,7 +837,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 650), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 760), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -846,9 +852,9 @@ public sealed class MainForm : Form
 
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 410), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false };
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 540), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false, GrowStyle = TableLayoutPanelGrowStyle.FixedSize };
         settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var row = 0; row < 6; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row == 5 ? 76 : 66));
+        for (var row = 0; row < 6; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row == 5 ? 84 : 88));
         settingsCard.Controls.Add(settingsStack);
         var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
         for (var i = 0; i < settingsGridItems.Length; i++)
@@ -864,10 +870,10 @@ public sealed class MainForm : Form
         settingsPanel.AutoScroll = true;
         settingsPanel.Resize += (_, _) => settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
         settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
-        var settingsBrand = new PictureBox { Location = new Point(22, 500), Size = new Size(220, 95), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
+        var settingsBrand = new PictureBox { Location = new Point(22, 666), Size = new Size(220, 70), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
-        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 530), ForeColor = TextDim });
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 690), ForeColor = TextDim });
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
@@ -875,15 +881,14 @@ public sealed class MainForm : Form
         left.Controls.Clear();
         left.ColumnStyles.Clear();
         left.RowStyles.Clear();
-        left.ColumnCount = 2;
+        left.ColumnCount = 1;
         left.RowCount = 2;
         left.Padding = new Padding(0);
         left.Margin = new Padding(0);
         left.BackColor = Bg;
-        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
-        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 245));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
 
         Panel MakeAudioCard(string title, int padding = 18)
         {
