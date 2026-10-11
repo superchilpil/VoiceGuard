@@ -1,3 +1,7 @@
+## Reduced CPU Contention
+- Limited Whisper to four CPU threads so speech recognition is less likely to monopolize the processor during gaming.
+- Intel NPU acceleration remains enabled where supported; CPU work is still required for parts of recognition.
+
 ## Soundboard Alias Persistence
 - Fixed soundboard aliases not being restored when VoiceGuard starts.
 - Saved aliases now load against their matching soundboard clips and remain available for speech detection.
