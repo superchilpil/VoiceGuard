@@ -833,6 +833,121 @@ public sealed class MainForm : Form
 
         left.Controls.Add(jackBrand, 0, 16);
 
+        // Rebuild Audio as a two-column card workspace. Existing controls and
+        // event handlers are reused so device routing, persistence and PTT stay unchanged.
+        left.SuspendLayout();
+        left.Controls.Clear();
+        left.ColumnStyles.Clear();
+        left.RowStyles.Clear();
+        left.ColumnCount = 2;
+        left.RowCount = 2;
+        left.Padding = new Padding(0);
+        left.Margin = new Padding(0);
+        left.BackColor = Bg;
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54));
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 245));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        Panel MakeAudioCard(string title, int padding = 18)
+        {
+            var card = new Panel
+            {
+                Dock = DockStyle.Fill, BackColor = Surface,
+                Padding = new Padding(padding), Margin = new Padding(0, 0, 14, 14)
+            };
+            void RoundCard()
+            {
+                if (card.Width < 2 || card.Height < 2) return;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                const int radius = 14;
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(card.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(card.Width - radius - 1, card.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, card.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
+                card.Region?.Dispose();
+                card.Region = new Region(path);
+            }
+            card.Resize += (_, _) => RoundCard();
+            card.Controls.Add(new Label
+            {
+                Text = title.ToUpperInvariant(), AutoSize = true,
+                Location = new Point(padding, 12), ForeColor = TextDim,
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            });
+            return card;
+        }
+
+        var devicesCard = MakeAudioCard("Audio devices");
+        left.Controls.Add(devicesCard, 0, 0);
+        foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel })
+            left.Controls.Remove(control);
+        inputLabel.Location = new Point(18, 38);
+        inputLabel.Dock = DockStyle.None;
+        inputLabel.Height = 22;
+        inputLabel.AutoSize = true;
+        input.SetBounds(18, 60, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
+        input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        outputLabel.Location = new Point(18, 98);
+        outputLabel.Dock = DockStyle.None;
+        outputLabel.Height = 22;
+        outputLabel.AutoSize = true;
+        output.SetBounds(18, 120, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
+        output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        outputVolumePanel.SetBounds(18, 158, Math.Max(200, devicesCard.ClientSize.Width - 42), 54);
+        outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        devicesCard.Controls.AddRange(new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel });
+        devicesCard.Resize += (_, _) =>
+        {
+            input.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
+            output.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
+            outputVolumePanel.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
+        };
+
+        var transmissionCard = MakeAudioCard("Transmission control");
+        left.Controls.Add(transmissionCard, 1, 0);
+        start.Parent?.Controls.Remove(start);
+        start.SetBounds(18, 38, Math.Max(180, transmissionCard.ClientSize.Width - 42), 40);
+        start.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        delayPanel.Parent?.Controls.Remove(delayPanel);
+        delayPanel.SetBounds(18, 88, 140, 52);
+        pttPanel.Parent?.Controls.Remove(pttPanel);
+        pttPanel.SetBounds(174, 88, 120, 52);
+        transmissionCard.Controls.AddRange(new Control[] { start, delayPanel, pttPanel });
+        transmissionCard.Resize += (_, _) =>
+        {
+            start.Width = Math.Max(180, transmissionCard.ClientSize.Width - 42);
+            pttPanel.Left = Math.Max(154, transmissionCard.ClientSize.Width - pttPanel.Width - 18);
+        };
+
+        var hotkeysCard = MakeAudioCard("Hotkeys");
+        left.Controls.Add(hotkeysCard, 0, 1);
+        voiceGuardTriggerPanel.Parent?.Controls.Remove(voiceGuardTriggerPanel);
+        voiceGuardTriggerPanel.SetBounds(18, 40, 190, 54);
+        soundboardListenKeyPanel.Parent?.Controls.Remove(soundboardListenKeyPanel);
+        soundboardListenKeyPanel.SetBounds(18, 102, 190, 54);
+        hotkeyPanel.Parent?.Controls.Remove(hotkeyPanel);
+        hotkeyPanel.SetBounds(18, 164, 210, 54);
+        hotkeysCard.Controls.AddRange(new Control[] { voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel });
+
+        var preferencesCard = MakeAudioCard("Preferences & status");
+        left.Controls.Add(preferencesCard, 1, 1);
+        startupPanel.Parent?.Controls.Remove(startupPanel);
+        startupPanel.SetBounds(18, 42, Math.Max(180, preferencesCard.ClientSize.Width - 36), 56);
+        mode.Parent?.Controls.Remove(mode);
+        mode.SetBounds(18, 112, Math.Max(180, preferencesCard.ClientSize.Width - 36), 34);
+        status.Parent?.Controls.Remove(status);
+        status.SetBounds(18, 150, Math.Max(180, preferencesCard.ClientSize.Width - 36), 58);
+        preferencesCard.Controls.AddRange(new Control[] { startupPanel, mode, status });
+        preferencesCard.Resize += (_, _) =>
+        {
+            startupPanel.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
+            mode.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
+            status.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
+        };
+        left.ResumeLayout(true);
+
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
         var wordPanel = new TableLayoutPanel
@@ -844,6 +959,27 @@ public sealed class MainForm : Form
             Padding = new Padding(8, 0, 7, 0),
             BackColor = Bg
         };
+        wordPanel.Padding = new Padding(14);
+        wordPanel.Margin = new Padding(0, 0, 10, 0);
+        void RoundSurface(Control surface, int radius = 14)
+        {
+            void Apply()
+            {
+                if (surface.Width < 2 || surface.Height < 2) return;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(surface.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(surface.Width - radius - 1, surface.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, surface.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
+                surface.Region?.Dispose();
+                surface.Region = new Region(path);
+            }
+            surface.Resize += (_, _) => Apply();
+            Apply();
+        }
+        RoundSurface(wordPanel);
+        RoundSurface(words, 10);
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
@@ -939,6 +1075,10 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
             Margin = new Padding(0, 0, 7, 0), Padding = new Padding(8, 0, 7, 0), BackColor = Bg
         };
+        soundboardPanel.Padding = new Padding(14);
+        soundboardPanel.Margin = new Padding(0, 0, 10, 0);
+        RoundSurface(soundboardPanel);
+        RoundSurface(soundboard, 10);
         soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
