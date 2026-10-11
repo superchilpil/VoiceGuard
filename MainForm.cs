@@ -530,11 +530,10 @@ public sealed class MainForm : Form
         {
             var contentWidth = Math.Max(120, heroCard.ClientSize.Width - 40);
             foreach (Control item in heroCard.Controls)
-            {
-                if (item is Label label && (label.Name == "dashboardMode" || label.Name == "dashboardStatus" || label.Text == "Your Voice Filtered for Snowflakes"))
-                    label.Width = contentWidth;
-            }
+                if (item is Label label) label.Width = contentWidth;
+            start.SetBounds(20, 146, Math.Min(220, contentWidth), 40);
         };
+        start.SetBounds(20, 146, 220, 40);
 
         var pttCard = MakeDashboardCard("Push-to-talk key");
         dashboard.Controls.Add(pttCard, 0, 1);
