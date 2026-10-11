@@ -74,7 +74,7 @@ public sealed class MainForm : Form
     private WaveOutEvent? soundboardHeadsetOutput;
     private AudioFileReader? soundboardHeadsetReader;
     private readonly Button editSoundboard = new();
-    private readonly TrackBar outputVolume = new();
+    private readonly ThemedTrackBar outputVolume = new();
     private readonly Label outputVolumeValue = new();
     private bool draggingReplacementVolume;
     private int draggingReplacementIndex = -1;
@@ -86,8 +86,8 @@ public sealed class MainForm : Form
     private string overlayStyle = "Text";
     private readonly Label status = new();
     private readonly Button start = new();
-    private readonly CheckBox startWithWindows = new();
-    private readonly CheckBox minimizeToTray = new();
+    private readonly ToggleSwitch startWithWindows = new();
+    private readonly ToggleSwitch minimizeToTray = new();
     private readonly TextBox startStopHotkey = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly Button updateButton = new();
@@ -222,9 +222,9 @@ public sealed class MainForm : Form
         ApplyWindowAndTaskbarIcon();
 
         Text = "VoiceGuard — 6.7";
-        Width = 1440;
-        Height = 850;
-        MinimumSize = new Size(1440, 850);
+        Width = 825;
+        Height = 780;
+        MinimumSize = new Size(825, 740);
         WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
@@ -269,7 +269,7 @@ public sealed class MainForm : Form
 
         header.Controls.Add(new Label
         {
-            Text = "VOICE CHAT PROFANITY FILTER  -  SOUNDBOARD",
+            Text = "Your Voice Filtered for Snowflakes",
             AutoSize = true,
             Location = new Point(70, 39),
             ForeColor = AccentBright,
@@ -282,17 +282,13 @@ public sealed class MainForm : Form
             Height = 1,
             BackColor = Border
         };
-        var overlaySettingsButton = new Button { Text = "Overlay settings", Size = new Size(126, 32), Anchor = AnchorStyles.Top | AnchorStyles.Right, Location = new Point(Width - 190, 12) };
-        StyleButton(overlaySettingsButton, false);
-        overlaySettingsButton.Click += (_, _) => ShowOverlaySettings();
-        header.Controls.Add(overlaySettingsButton);
-
         updateButton.Text = "Check for updates";
-        updateButton.Size = new Size(126, 32);
+        updateButton.Size = new Size(138, 34);
         updateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        updateButton.Location = new Point(Width - 326, 12);
+        updateButton.Location = new Point(Width - 188, 12);
         updateButton.Visible = true;
         StyleButton(updateButton, false);
+        ApplyRoundedButton(updateButton, 10);
         updateButton.Click += async (_, _) => await StartUpdateAsync();
         header.Controls.Add(updateButton);
 
@@ -301,32 +297,131 @@ public sealed class MainForm : Form
 
         Shown += async (_, _) => await CheckForUpdatesAsync();
 
-        // The four-section working area is confined to row 2 of root.
-        var mainHost = new Panel
-        { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Bg, Padding = new Padding(0) };
-        root.Controls.Add(mainHost, 0, 1);
+        // JTG-RGB-inspired workspace: persistent sidebar and one focused page at a time.
+        var workspace = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+            Padding = new Padding(0), Margin = new Padding(0), BackColor = Bg
+        };
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 224));
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        workspace.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.Controls.Add(workspace, 0, 1);
+
+        var sidebar = new Panel
+        {
+            Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(14, 18, 14, 14),
+            Margin = new Padding(8)
+        };
+        ApplyRoundedPanel(sidebar, 14);
+        workspace.Controls.Add(sidebar, 0, 0);
+        var sidebarTitle = new Label
+        {
+            Text = "WORKSPACE", AutoSize = true, Location = new Point(14, 18),
+            ForeColor = TextDim, Font = new Font("Segoe UI", 8F, FontStyle.Bold)
+        };
+        sidebar.Controls.Add(sidebarTitle);
+        var sidebarBrand = new Label
+        {
+            Text = "VoiceGuard", AutoSize = true, Location = new Point(14, 43),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 15F, FontStyle.Bold)
+        };
+        sidebar.Controls.Add(sidebarBrand);
+        var sidebarDivider = new Panel
+        {
+            BackColor = Border, Height = 1, Location = new Point(14, 78),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+        sidebar.Controls.Add(sidebarDivider);
+        var sidebarFooter = new Label
+        {
+            Text = "VOICE FILTER  •  JTG", AutoSize = false, Height = 20,
+            ForeColor = TextDim, Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleCenter, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+        };
+        sidebar.Controls.Add(sidebarFooter);
+
+        var pageHost = new Panel
+        {
+            Dock = DockStyle.Fill, AutoScroll = false, BackColor = Bg,
+            Padding = new Padding(0), Margin = new Padding(0)
+        };
+        workspace.Controls.Add(pageHost, 1, 0);
+        ApplyDarkScrollbarTheme(pageHost);
+
+        var pageTitle = new Label
+        {
+            Text = "Dashboard & Audio", AutoSize = true, Location = new Point(24, 18),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 18F, FontStyle.Bold)
+        };
+        pageHost.Controls.Add(pageTitle);
+        var pageSubtitle = new Label
+        {
+            Text = "Manage your devices, transmission keys, and VoiceGuard runtime.",
+            AutoSize = true, Location = new Point(26, 54),
+            ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
+        };
+        pageHost.Controls.Add(pageSubtitle);
+        var statusBadge = new Label
+        {
+            Text = "●  READY WHEN YOU ARE", AutoSize = true, TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Success, BackColor = Surface, Padding = new Padding(12, 8, 12, 8),
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold), Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+        statusBadge.Location = new Point(Math.Max(24, pageHost.ClientSize.Width - 220), 24);
+        pageHost.Controls.Add(statusBadge);
+        pageHost.Resize += (_, _) =>
+            statusBadge.Location = new Point(Math.Max(24, pageHost.ClientSize.Width - statusBadge.Width - 24), 24);
 
         var main = new TableLayoutPanel
         {
-            Location = new Point(0, 0),
-            Width = 1680,
-            Height = 1,
-            AutoSize = false,
-            ColumnCount = 4,
-            RowCount = 1,
-            Padding = new Padding(18, 14, 18, 18),
-            Margin = new Padding(0),
-            BackColor = Bg
+            Location = new Point(0, 88), Width = 1, Height = 1, AutoSize = false,
+            ColumnCount = 6, RowCount = 1, Padding = new Padding(18, 10, 18, 18),
+            Margin = new Padding(0), BackColor = Bg
         };
-        // Four primary sections: controls, blocked words, soundboard phrases, logs.
-        // The host is horizontally scrollable whenever the window is narrower than
-        // the complete working surface. Maximized mode normally shows the full layout.
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 510));
-        mainHost.Controls.Add(main);
-        mainHost.Resize += (_, _) => main.Height = Math.Max(1, mainHost.ClientSize.Height);
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (var i = 1; i < 6; i++) main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        pageHost.Controls.Add(main);
+        pageHost.Resize += (_, _) =>
+        {
+            main.Width = Math.Max(1, pageHost.ClientSize.Width);
+            main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
+        };
+        var navButtons = new List<Button>();
+        var navLabels = new[] { "⌂   Dashboard", "♫   Audio", "☷   Word Filter", "▣   Soundboard", "≡   Logs", "⚙   Settings" };
+        Action<int> showPage = _ => { };
+        for (var i = 0; i < navLabels.Length; i++)
+        {
+            var pageIndex = i;
+            var nav = new Button
+            {
+                Text = navLabels[i], Tag = i, Location = new Point(8, 104 + i * 44),
+                Size = new Size(174, 38), TextAlign = ContentAlignment.MiddleLeft,
+                FlatStyle = FlatStyle.Flat, BackColor = Surface, ForeColor = TextDim,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular), Cursor = Cursors.Hand,
+                Padding = new Padding(10, 0, 0, 0), Margin = new Padding(0)
+            };
+            nav.FlatAppearance.BorderSize = 0;
+            nav.FlatAppearance.MouseOverBackColor = Surface2;
+            ApplyRoundedButton(nav, 10);
+            nav.Click += (_, _) => showPage(pageIndex);
+            sidebar.Controls.Add(nav);
+            navButtons.Add(nav);
+        }
+        void LayoutSidebar()
+        {
+            var width = Math.Max(80, sidebar.ClientSize.Width - 16);
+            for (var i = 0; i < navButtons.Count; i++)
+            {
+                navButtons[i].SetBounds(8, 104 + i * 44, width, 38);
+                ApplyRoundedButton(navButtons[i], 10);
+            }
+            sidebarFooter.SetBounds(12, Math.Max(0, sidebar.ClientSize.Height - 34), Math.Max(80, sidebar.ClientSize.Width - 24), 20);
+            sidebarDivider.Width = Math.Max(80, sidebar.ClientSize.Width - 28);
+        }
+        sidebar.Resize += (_, _) => LayoutSidebar();
+        LayoutSidebar();
+        var selectedPage = 0;
 
         // LEFT: controls are explicitly arranged top-to-bottom in the
         // requested order instead of relying on DockStyle.Top z-order.
@@ -334,7 +429,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 16,
+            RowCount = 17,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -358,7 +453,140 @@ public sealed class MainForm : Form
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); // mode
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 44)); // status
         left.RowStyles.Add(new RowStyle(SizeType.Absolute, 68)); // branding
-        main.Controls.Add(left, 0, 0);
+        // A real dashboard page: status overview and quick-reference cards.
+        var dashboard = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3,
+            BackColor = Bg, Margin = new Padding(0), Padding = new Padding(0), AutoScroll = true
+        };
+        dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        dashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
+        dashboard.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        dashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        main.Controls.Add(dashboard, 0, 0);
+
+        Panel MakeDashboardCard(string title)
+        {
+            var card = new Panel
+            {
+                BackColor = Surface, Padding = new Padding(20), Margin = new Padding(0, 0, 14, 14),
+                Dock = DockStyle.Fill
+            };
+            void ApplyRoundedCardRegion()
+            {
+                if (card.Width < 2 || card.Height < 2) return;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                const int radius = 14;
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(card.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(card.Width - radius - 1, card.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, card.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
+                card.Region?.Dispose();
+                card.Region = new Region(path);
+            }
+            card.Resize += (_, _) => ApplyRoundedCardRegion();
+            card.Paint += (_, e) =>
+            {
+                var bounds = new Rectangle(1, 1, card.Width - 3, card.Height - 3);
+                using var path = RoundedRectanglePath(bounds, 14);
+                using var pen = new Pen(Border, 1F);
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                e.Graphics.DrawPath(pen, path);
+            };
+            card.Controls.Add(new Label
+            {
+                Text = title.ToUpperInvariant(), AutoSize = true, Location = new Point(20, 16),
+                ForeColor = TextDim, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            });
+            return card;
+        }
+
+        var heroCard = MakeDashboardCard("VoiceGuard status");
+        dashboard.Controls.Add(heroCard, 0, 0);
+        dashboard.SetColumnSpan(heroCard, 2);
+        heroCard.Controls.Add(new Label
+        {
+            Text = "Your Voice Filtered for Snowflakes", Name = "dashboardHeroTitle", AutoSize = false,
+            Location = new Point(20, 42), Size = new Size(0, 38), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            ForeColor = TextMain, Font = new Font("Segoe UI", 10.5F, FontStyle.Bold), AutoEllipsis = false
+        });
+        var dashboardMode = new Label
+        {
+            Name = "dashboardMode", Text = "●  READY WHEN YOU ARE", AutoSize = false,
+            Location = new Point(20, 84), Size = new Size(0, 24), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, ForeColor = Success,
+            Font = new Font("Segoe UI", 10F, FontStyle.Bold)
+        };
+        heroCard.Controls.Add(dashboardMode);
+        var dashboardStatus = new Label
+        {
+            Name = "dashboardStatus", Text = "Your audio filter is currently stopped.",
+            AutoSize = false, Location = new Point(20, 108), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
+        };
+        heroCard.Controls.Add(dashboardStatus);
+        heroCard.Resize += (_, _) =>
+        {
+            var contentWidth = Math.Max(120, heroCard.ClientSize.Width - 40);
+            foreach (Control item in heroCard.Controls)
+            {
+                if (item is Label label)
+                    label.Width = item.Name == "dashboardStatus"
+                        ? Math.Max(120, contentWidth - 250)
+                        : contentWidth;
+            }
+            // Keep the action fully inside the status card and to the right of the status copy.
+            start.SetBounds(Math.Max(20, heroCard.ClientSize.Width - 240), 122, 220, 40);
+        };
+        start.SetBounds(240, 122, 220, 40);
+        start.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        ApplyRoundedButton(start, 10);
+
+        var pttCard = MakeDashboardCard("Push-to-talk key");
+        dashboard.Controls.Add(pttCard, 0, 1);
+        var dashboardPttValue = new Label
+        {
+            Name = "dashboardPttValue", Text = ptt.Tag is Keys initialPttKey ? initialPttKey.ToString() : (string.IsNullOrWhiteSpace(ptt.Text) ? "Z" : ptt.Text), AutoSize = true, Location = new Point(20, 52),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 24F, FontStyle.Bold)
+        };
+        pttCard.Controls.Add(dashboardPttValue);
+        ptt.KeyDown += (_, _) => dashboardPttValue.Text = ptt.Text;
+        ptt.TextChanged += (_, _) => dashboardPttValue.Text = ptt.Text;
+        pttCard.Resize += (_, _) => dashboardPttValue.Location = new Point(20, 52);
+        pttCard.Controls.Add(new Label
+        {
+            Text = "Your current passthrough key", AutoSize = true,
+            Location = new Point(20, 100), ForeColor = TextDim
+        });
+
+        var delayCard = MakeDashboardCard("Audio delay");
+        dashboard.Controls.Add(delayCard, 1, 1);
+        var dashboardDelayValue = new Label
+        {
+            Text = $"{delay.Value:0.0} sec", AutoSize = true, Location = new Point(20, 52),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 24F, FontStyle.Bold)
+        };
+        delayCard.Controls.Add(dashboardDelayValue);
+        delay.ValueChanged += (_, _) => dashboardDelayValue.Text = $"{delay.Value:0.0} sec";
+        delayCard.Controls.Add(new Label
+        {
+            Text = "Transmission delay setting", AutoSize = true,
+            Location = new Point(20, 100), ForeColor = TextDim
+        });
+
+        var quickCard = MakeDashboardCard("Quick setup");
+        dashboard.Controls.Add(quickCard, 0, 2);
+        dashboard.SetColumnSpan(quickCard, 2);
+        quickCard.Controls.Add(new Label
+        {
+            Text = "1. Choose your microphone and virtual-cable output in Audio.\r\n2. Confirm your PTT key and delay.\r\n3. Start VoiceGuard, then test in a private voice channel.",
+            AutoSize = false, Location = new Point(20, 48), Size = new Size(760, 90),
+            ForeColor = TextDim, Font = new Font("Segoe UI", 10F)
+        });
+
+        main.Controls.Add(left, 1, 0);
         ApplyDarkScrollbarTheme(left);
 
         var inputLabel = MakeFieldLabel("Input");
@@ -366,6 +594,7 @@ public sealed class MainForm : Form
         input.Dock = DockStyle.Fill;
         input.DropDownStyle = ComboBoxStyle.DropDownList;
         StyleInput(input);
+        StyleComboBox(input);
         input.Margin = new Padding(0, 0, 0, 4);
         left.Controls.Add(input, 0, 1);
 
@@ -374,6 +603,7 @@ public sealed class MainForm : Form
         output.Dock = DockStyle.Fill;
         output.DropDownStyle = ComboBoxStyle.DropDownList;
         StyleInput(output);
+        StyleComboBox(output);
         output.Margin = new Padding(0, 0, 0, 4);
         left.Controls.Add(output, 0, 3);
 
@@ -382,6 +612,8 @@ public sealed class MainForm : Form
         outputVolumePanel.Controls.Add(outputVolumeLabel);
         outputVolume.Dock = DockStyle.Bottom;
         outputVolume.Height = 28;
+        outputVolume.BackColor = Surface2;
+        outputVolume.ForeColor = AccentBright;
         outputVolume.Minimum = 0;
         outputVolume.Maximum = 150;
         outputVolume.TickFrequency = 25;
@@ -413,7 +645,10 @@ public sealed class MainForm : Form
         start.Margin = new Padding(0, 2, 0, 6);
         start.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
         start.Click += async (_, _) => await ToggleEngineAsync();
-        left.Controls.Add(start, 0, 6);
+        start.Dock = DockStyle.None;
+        start.Location = new Point(20, 84);
+        start.Size = new Size(220, 44);
+        heroCard.Controls.Add(start);
 
         left.Controls.Add(MakeSectionTitle("SETTINGS"), 0, 7);
 
@@ -424,6 +659,7 @@ public sealed class MainForm : Form
         delayPanel.Controls.Add(delayLabel);
         var delayBox = MakeInputBox(delay, 70);
         delayBox.Location = new Point(0, 24);
+        delay.TextAlign = HorizontalAlignment.Center;
         delayPanel.Controls.Add(delayBox);
         delayBox.BringToFront();
         delay.Minimum = 2;
@@ -508,8 +744,8 @@ public sealed class MainForm : Form
         hotkeyPanel.Controls.Add(hotkeyLabel);
         startStopHotkey.Dock = DockStyle.None;
         startStopHotkey.Location = new Point(0, 24);
-        startStopHotkey.Width = 140;
-        startStopHotkey.Height = 28;
+        startStopHotkey.Width = 220;
+        startStopHotkey.Height = 34;
         startStopHotkey.ReadOnly = true;
         startStopHotkey.Text = "Ctrl + Alt + V";
         startStopHotkey.Tag = Keys.Control | Keys.Alt | Keys.V;
@@ -602,6 +838,250 @@ public sealed class MainForm : Form
 
         left.Controls.Add(jackBrand, 0, 16);
 
+        // Dedicated settings page for app preferences and overlay configuration.
+        var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
+        main.Controls.Add(settingsPanel, 5, 0);
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 800), Padding = new Padding(22) };
+        RoundSurface(settingsCard, 14);
+        settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
+        settingsPanel.Controls.Add(settingsCard);
+        settingsCard.Controls.Add(new Label { Text = "APPLICATION SETTINGS", AutoSize = true, Location = new Point(22, 18), ForeColor = TextDim, Font = new Font("Segoe UI", 9F, FontStyle.Bold) });
+        var overlayPageButton = new Button { Text = "Configure mode overlay  →", Location = new Point(22, 58), Size = new Size(260, 42) };
+        StyleButton(overlayPageButton, true);
+        overlayPageButton.Click += (_, _) => ShowOverlaySettings();
+        settingsCard.Controls.Add(overlayPageButton);
+        overlayPageButton.Location = new Point(22, 54);
+        overlayPageButton.Size = new Size(260, 38);
+        ApplyRoundedButton(overlayPageButton, 10);
+
+        Panel MakeSettingsToggleCard(string title, ToggleSwitch toggle)
+        {
+            var card = new Panel { Dock = DockStyle.Fill, BackColor = Surface2, Margin = new Padding(0, 0, 0, 8), Padding = new Padding(12, 4, 12, 4) };
+            ApplyRoundedPanel(card, 10);
+            var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
+            toggle.Dock = DockStyle.None;
+            toggle.AutoSize = false;
+            toggle.Text = string.Empty;
+            toggle.Appearance = Appearance.Button;
+            toggle.Size = new Size(30, 22);
+            toggle.SetBounds(0, 0, 30, 22);
+            toggle.BackColor = Surface2;
+            card.Controls.Add(toggle);
+            card.Controls.Add(label);
+            void LayoutToggle()
+            {
+                label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 150), card.ClientSize.Height);
+                toggle.AutoSize = false;
+                toggle.Text = string.Empty;
+                toggle.Size = new Size(30, 22);
+                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 112), (card.ClientSize.Height - 22) / 2, 30, 22);
+            }
+            card.Resize += (_, _) => LayoutToggle();
+            LayoutToggle();
+            return card;
+        }
+
+        void LayoutSettingRow(Panel panel, Label label, Control editor)
+        {
+            void ApplyLayout()
+            {
+                int h = panel.ClientSize.Height;
+                int editorWidth = editor == startStopHotkey ? Math.Min(240, Math.Max(200, panel.ClientSize.Width / 2)) : Math.Min(180, Math.Max(130, panel.ClientSize.Width / 2));
+                label.Dock = DockStyle.None;
+                label.SetBounds(12, 0, Math.Max(120, panel.ClientSize.Width - editorWidth - 36), h);
+                label.TextAlign = ContentAlignment.MiddleLeft;
+                editor.SetBounds(panel.ClientSize.Width - editorWidth - 14, Math.Max(4, (h - 34) / 2), editorWidth, 34);
+                editor.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                if (editor is Panel editorPanel)
+                {
+                    editorPanel.Padding = new Padding(1);
+                    editorPanel.BackColor = Color.FromArgb(39, 31, 51);
+                    foreach (Control child in editorPanel.Controls)
+                    {
+                        child.Dock = DockStyle.Fill;
+                        child.Font = new Font("Segoe UI", 10F);
+                    }
+                }
+                else editor.Font = new Font("Segoe UI", 10F);
+            }
+            panel.Resize += (_, _) => ApplyLayout();
+            ApplyLayout();
+        }
+
+        var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
+        foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 570), ColumnCount = 1, RowCount = 7, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false };
+        settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (var row = 0; row < 7; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row < 5 ? 88 : 58));
+        settingsCard.Controls.Add(settingsStack);
+        var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
+        LayoutSettingRow(delayPanel, delayLabel, delayBox);
+        LayoutSettingRow(pttPanel, pttLabel, pttBox);
+        LayoutSettingRow(voiceGuardTriggerPanel, voiceGuardTriggerLabel, voiceGuardTriggerBox);
+        LayoutSettingRow(soundboardListenKeyPanel, soundboardListenKeyLabel, soundboardKeyBox);
+        LayoutSettingRow(hotkeyPanel, hotkeyLabel, startStopHotkey);
+        for (var i = 0; i < settingsGridItems.Length; i++)
+        {
+            var item = settingsGridItems[i];
+            item.Dock = DockStyle.Fill; item.Margin = new Padding(0, 0, 0, 8); item.Padding = new Padding(12, 8, 12, 6); item.BackColor = Surface2;
+            ApplyRoundedPanel(item, 10); settingsStack.Controls.Add(item, 0, i);
+        }
+        startupPanel.Parent?.Controls.Remove(startupPanel);
+        startWithWindows.Appearance = Appearance.Normal;
+        minimizeToTray.Appearance = Appearance.Normal;
+        var windowsToggleCard = MakeSettingsToggleCard("Start with Windows", startWithWindows);
+        var trayToggleCard = MakeSettingsToggleCard("Minimize to system tray", minimizeToTray);
+        settingsStack.Controls.Add(windowsToggleCard, 0, 5);
+        settingsStack.Controls.Add(trayToggleCard, 0, 6);
+        settingsPanel.AutoScroll = true;
+        ApplyDarkScrollbarTheme(settingsPanel);
+        settingsPanel.Resize += (_, _) => settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
+        settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
+        var settingsBrand = new PictureBox { Location = new Point(22, 708), Size = new Size(220, 70), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
+        if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
+        settingsCard.Controls.Add(settingsBrand);
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 732), ForeColor = TextDim });
+
+        // Rebuild Audio as a two-column card workspace. Existing controls and
+        // event handlers are reused so device routing, persistence and PTT stay unchanged.
+        left.SuspendLayout();
+        left.Controls.Clear();
+        left.ColumnStyles.Clear();
+        left.RowStyles.Clear();
+        left.ColumnCount = 1;
+        left.RowCount = 3;
+        left.Padding = new Padding(0);
+        left.Margin = new Padding(0);
+        left.BackColor = Bg;
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 46));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 54));
+
+        Panel MakeAudioCard(string title, int padding = 18)
+        {
+            var card = new Panel
+            {
+                Dock = DockStyle.Fill, BackColor = Surface,
+                Padding = new Padding(padding), Margin = new Padding(0, 0, 14, 14)
+            };
+            void RoundCard()
+            {
+                if (card.Width < 2 || card.Height < 2) return;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                const int radius = 14;
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(card.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(card.Width - radius - 1, card.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, card.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
+                card.Region?.Dispose();
+                card.Region = new Region(path);
+            }
+            card.Resize += (_, _) => RoundCard();
+            card.Controls.Add(new Label
+            {
+                Text = title.ToUpperInvariant(), AutoSize = true,
+                Location = new Point(padding, 12), ForeColor = TextDim,
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold)
+            });
+            return card;
+        }
+
+        left.SuspendLayout();
+        left.Controls.Clear();
+        left.ColumnStyles.Clear();
+        left.RowStyles.Clear();
+        left.ColumnCount = 1;
+        left.RowCount = 2;
+        left.Padding = new Padding(0);
+        left.Margin = new Padding(0);
+        left.BackColor = Bg;
+        left.AutoScroll = false;
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
+        foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel }) control.Parent?.Controls.Remove(control);
+        var inputCard = MakeAudioCard("Microphone input");
+        inputCard.Margin = new Padding(0, 0, 0, 12);
+        inputCard.Dock = DockStyle.Fill;
+        left.Controls.Add(inputCard, 0, 0);
+        inputLabel.Location = new Point(18, 38); inputLabel.AutoSize = true; inputLabel.Dock = DockStyle.None;
+        input.SetBounds(18, 54, 100, 32); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        input.BackColor = Color.FromArgb(42, 24, 61); input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; input.DrawMode = DrawMode.OwnerDrawFixed; input.ItemHeight = 24; ApplyRoundedComboBox(input, 10);
+        inputCard.Controls.AddRange(new Control[] { inputLabel, input });
+        var inputDropButton = MakeAudioDropButton(input);
+        inputCard.Controls.Add(inputDropButton);
+        var inputTopMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
+        inputCard.Controls.Add(inputTopMask);
+        void LayoutInputCombo()
+        {
+            int width = Math.Max(100, inputCard.ClientSize.Width - 42);
+            input.SetBounds(18, 54, width, 32);
+            inputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
+            inputDropButton.BringToFront();
+            inputTopMask.SetBounds(21, 54, Math.Max(1, width - 27), 3);
+            inputTopMask.BringToFront();
+            inputDropButton.BringToFront();
+        }
+        inputCard.Resize += (_, _) => LayoutInputCombo();
+        LayoutInputCombo();
+        var outputCard = MakeAudioCard("Virtual cable output");
+        outputCard.Margin = new Padding(0, 0, 0, 12);
+        outputCard.Dock = DockStyle.Fill;
+        left.Controls.Add(outputCard, 0, 1);
+        outputLabel.Location = new Point(18, 38); outputLabel.AutoSize = true; outputLabel.Dock = DockStyle.None;
+        output.SetBounds(18, 54, 100, 32); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        output.BackColor = Color.FromArgb(42, 24, 61); output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; output.DrawMode = DrawMode.OwnerDrawFixed; output.ItemHeight = 24; ApplyRoundedComboBox(output, 10);
+        outputCard.Controls.AddRange(new Control[] { outputLabel, output });
+        var outputDropButton = MakeAudioDropButton(output);
+        outputCard.Controls.Add(outputDropButton);
+        var outputTopMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
+        outputCard.Controls.Add(outputTopMask);
+        void LayoutOutputCombo()
+        {
+            int width = Math.Max(100, outputCard.ClientSize.Width - 42);
+            output.SetBounds(18, 54, width, 32);
+            outputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
+            outputDropButton.BringToFront();
+            outputTopMask.SetBounds(21, 54, Math.Max(1, width - 27), 3);
+            outputTopMask.BringToFront();
+            outputDropButton.BringToFront();
+        }
+        outputCard.Resize += (_, _) => LayoutOutputCombo();
+        LayoutOutputCombo();
+        var volumeCard = MakeAudioCard("Headset output volume");
+        volumeCard.Margin = new Padding(0, 0, 0, 12);
+        volumeCard.Dock = DockStyle.Fill;
+        outputVolumePanel.SetBounds(18, 38, 100, 54);
+        outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        outputVolumeLabel.Location = new Point(0, 0);
+        outputVolumeLabel.Dock = DockStyle.None;
+        outputVolumeLabel.AutoSize = true;
+        outputVolume.Dock = DockStyle.Bottom;
+        outputVolume.Height = 28;
+        outputVolume.Margin = new Padding(0, 0, 48, 0);
+        outputVolumeValue.Dock = DockStyle.Right;
+        outputVolumeValue.SetBounds(0, 20, 45, 28);
+        volumeCard.Controls.Add(outputVolumePanel);
+        volumeCard.Resize += (_, _) =>
+        {
+            var w = Math.Max(100, volumeCard.ClientSize.Width - 42);
+            outputVolumePanel.SetBounds(18, 38, w, 54);
+        };
+        left.Controls.Add(volumeCard, 0, 2);
+        left.Resize += (_, _) =>
+        {
+            var gap = 12;
+            var width = Math.Max(1, left.ClientSize.Width - 14);
+            var availableHeight = Math.Max(0, left.ClientSize.Height - (gap * 2));
+            var firstHeight = (int)(availableHeight * 0.34);
+            var secondHeight = (int)(availableHeight * 0.34);
+            inputCard.SetBounds(0, 0, width, firstHeight);
+            outputCard.SetBounds(0, firstHeight + gap, width, secondHeight);
+            volumeCard.SetBounds(0, firstHeight + secondHeight + gap * 2, width, Math.Max(1, availableHeight - firstHeight - secondHeight));
+        };
+        left.ResumeLayout(true);
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
         var wordPanel = new TableLayoutPanel
@@ -613,10 +1093,31 @@ public sealed class MainForm : Form
             Padding = new Padding(8, 0, 7, 0),
             BackColor = Bg
         };
+        wordPanel.Padding = new Padding(14);
+        wordPanel.Margin = new Padding(0, 0, 10, 0);
+        void RoundSurface(Control surface, int radius = 14)
+        {
+            void Apply()
+            {
+                if (surface.Width < 2 || surface.Height < 2) return;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(surface.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(surface.Width - radius - 1, surface.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, surface.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
+                surface.Region?.Dispose();
+                surface.Region = new Region(path);
+            }
+            surface.Resize += (_, _) => Apply();
+            Apply();
+        }
+        RoundSurface(wordPanel);
+        RoundSurface(words, 10);
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         wordPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
-        main.Controls.Add(wordPanel, 1, 0);
+        main.Controls.Add(wordPanel, 2, 0);
 
         var wordTitle = new Label
         {
@@ -631,7 +1132,7 @@ public sealed class MainForm : Form
         words.Dock = DockStyle.Fill;
         words.Margin = new Padding(0);
         words.SelectionMode = SelectionMode.One;
-        words.BorderStyle = BorderStyle.FixedSingle;
+        words.BorderStyle = BorderStyle.None;
         words.BackColor = Surface;
         words.ForeColor = TextMain;
         words.DrawMode = DrawMode.OwnerDrawFixed;
@@ -670,12 +1171,14 @@ public sealed class MainForm : Form
         StyleButton(addWord, false);
         addWord.Width = 105;
         addWord.Height = 30;
+        ApplyRoundedButton(addWord, 8);
         addWord.Margin = new Padding(0, 0, 7, 0);
         addWord.Click += (_, _) => AddBlockedWord();
         removeWord.Text = "Remove";
         StyleButton(removeWord, false);
         removeWord.Width = 105;
         removeWord.Height = 30;
+        ApplyRoundedButton(removeWord, 8);
         removeWord.Margin = new Padding(0);
         removeWord.Click += (_, _) => RemoveBlockedWord();
         wordButtons.Controls.Add(addWord);
@@ -708,10 +1211,14 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3,
             Margin = new Padding(0, 0, 7, 0), Padding = new Padding(8, 0, 7, 0), BackColor = Bg
         };
+        soundboardPanel.Padding = new Padding(14);
+        soundboardPanel.Margin = new Padding(0, 0, 10, 0);
+        RoundSurface(soundboardPanel);
+        RoundSurface(soundboard, 10);
         soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
         soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         soundboardPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
-        main.Controls.Add(soundboardPanel, 2, 0);
+        main.Controls.Add(soundboardPanel, 3, 0);
 
         soundboardPanel.Controls.Add(new Label
         { Text = "SOUNDBOARD PHRASES", Dock = DockStyle.Fill, Font = new Font("Segoe UI", 10F, FontStyle.Bold),
@@ -720,7 +1227,7 @@ public sealed class MainForm : Form
         soundboard.Dock = DockStyle.Fill;
         soundboard.Margin = new Padding(0);
         soundboard.SelectionMode = SelectionMode.One;
-        soundboard.BorderStyle = BorderStyle.FixedSingle;
+        soundboard.BorderStyle = BorderStyle.None;
         soundboard.BackColor = Surface;
         soundboard.ForeColor = TextMain;
         soundboard.DrawMode = DrawMode.OwnerDrawFixed;
@@ -756,10 +1263,10 @@ public sealed class MainForm : Form
         sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 135));
         sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 75));
         sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65));
-        addSoundboard.Text = "Add phrase"; StyleButton(addSoundboard, false); addSoundboard.Margin = new Padding(0,0,6,2); addSoundboard.Click += (_,_) => AddSoundboardPhrase();
-        editSoundboard.Text = "Edit"; StyleButton(editSoundboard, false); editSoundboard.Margin = new Padding(0,0,6,2); editSoundboard.Click += (_,_) => EditSelectedSoundboard();
-        removeSoundboard.Text = "Remove"; StyleButton(removeSoundboard, false); removeSoundboard.Margin = new Padding(0,0,6,2); removeSoundboard.Click += (_,_) => RemoveSelectedSoundboard();
-        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => { if (soundboardPlaybackActive || soundboardListenInProgress) CancelSoundboardPlayback(); else BeginSoundboardListenFromKey(); };
+        addSoundboard.Text = "Add phrase"; StyleButton(addSoundboard, false); ApplyRoundedButton(addSoundboard, 8); addSoundboard.Margin = new Padding(0,0,6,2); addSoundboard.Click += (_,_) => AddSoundboardPhrase();
+        editSoundboard.Text = "Edit"; StyleButton(editSoundboard, false); ApplyRoundedButton(editSoundboard, 8); editSoundboard.Margin = new Padding(0,0,6,2); editSoundboard.Click += (_,_) => EditSelectedSoundboard();
+        removeSoundboard.Text = "Remove"; StyleButton(removeSoundboard, false); ApplyRoundedButton(removeSoundboard, 8); removeSoundboard.Margin = new Padding(0,0,6,2); removeSoundboard.Click += (_,_) => RemoveSelectedSoundboard();
+        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); ApplyRoundedButton(listenSoundboard, 8); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => { if (soundboardPlaybackActive || soundboardListenInProgress) CancelSoundboardPlayback(); else BeginSoundboardListenFromKey(); };
         sbButtons.Controls.Add(addSoundboard,0,0); sbButtons.Controls.Add(editSoundboard,1,0); sbButtons.Controls.Add(removeSoundboard,2,0); sbButtons.Controls.Add(listenSoundboard,3,0);
         soundboardBottom.Controls.Add(sbButtons,0,0);
         soundboardBottom.Controls.Add(new Label
@@ -780,7 +1287,7 @@ public sealed class MainForm : Form
             Padding = new Padding(8, 0, 0, 0),
             BackColor = Bg
         };
-        main.Controls.Add(logSection, 3, 0);
+        main.Controls.Add(logSection, 4, 0);
 
         var logTitle = new Label
         {
@@ -815,6 +1322,49 @@ public sealed class MainForm : Form
         log.ForeColor = Color.Gainsboro;
         log.Font = new Font("Consolas", 9F);
         logHost.Controls.Add(log);
+        ApplyDarkScrollbarTheme(log);
+        showPage = pageIndex =>
+        {
+            selectedPage = Math.Clamp(pageIndex, 0, 5);
+            var widths = new[] { 0, 0, 0, 0, 0, 0 };
+            widths[selectedPage] = 1;
+            main.SuspendLayout();
+            main.ColumnStyles.Clear();
+            for (var i = 0; i < widths.Length; i++)
+                main.ColumnStyles.Add(new ColumnStyle(i == selectedPage ? SizeType.Percent : SizeType.Absolute,
+                    i == selectedPage ? 100F : 0F));
+            main.Width = Math.Max(1, pageHost.ClientSize.Width);
+            main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
+            main.ResumeLayout(true);
+            for (var i = 0; i < navButtons.Count; i++)
+            {
+                navButtons[i].BackColor = i == selectedPage ? Surface2 : Surface;
+                navButtons[i].ForeColor = i == selectedPage ? AccentBright : TextDim;
+                navButtons[i].Font = new Font("Segoe UI", 9.5F,
+                    i == selectedPage ? FontStyle.Bold : FontStyle.Regular);
+                navButtons[i].Invalidate();
+            }
+            dashboard.Visible = selectedPage == 0;
+            left.Visible = selectedPage == 1;
+            wordPanel.Visible = selectedPage == 2;
+            soundboardPanel.Visible = selectedPage == 3;
+            logSection.Visible = selectedPage == 4;
+            settingsPanel.Visible = selectedPage == 5;
+            pageTitle.Text = navLabels[selectedPage];
+            pageSubtitle.Text = selectedPage switch
+            {
+                0 => "Your Voice Filtered for Snowflakes",
+                1 => "Manage your microphone, virtual-cable output, and volume.",
+                2 => "Configure blocked words, aliases, and replacement sounds.",
+                3 => "Manage soundboard phrases, aliases, and private playback.",
+                4 => "Review VoiceGuard runtime and speech-filter activity.",
+                _ => "Configure startup, tray behavior, and the mode overlay."
+            };
+            statusBadge.Visible = false;
+            Text = "VoiceGuard — " + navLabels[selectedPage].Trim();
+        };
+        showPage(0);
+
 
         delay.ValueChanged += (_, _) => SavePersistence();
         ptt.KeyDown += (_, _) => SavePersistence();
@@ -832,6 +1382,7 @@ public sealed class MainForm : Form
         Load += (_, _) =>
         {
             LoadPersistence();
+            if (Controls.Find("dashboardPttValue", true).FirstOrDefault() is Label dashboardPttLabel) dashboardPttLabel.Text = ptt.Text;
             LoadDevices();
             ApplyStartWithWindowsSetting();
             RegisterStartStopHotkey();
@@ -850,6 +1401,68 @@ public sealed class MainForm : Form
         Padding = new Padding(0, 0, 0, 6),
         Margin = new Padding(0)
     };
+
+    private sealed class ThemedTrackBar : TrackBar
+    {
+        public ThemedTrackBar()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            BackColor = Surface2;
+            TickStyle = TickStyle.None;
+            AutoSize = false;
+            Height = 28;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.Clear(BackColor);
+            int pad = 8;
+            int trackY = Height / 2;
+            int left = pad + 5;
+            int right = Math.Max(left + 1, Width - pad - 5);
+            float ratio = Maximum <= Minimum ? 0f : (Value - Minimum) / (float)(Maximum - Minimum);
+            int thumbX = left + (int)Math.Round((right - left) * ratio);
+            using var trackPen = new Pen(Border, 4);
+            using var fillPen = new Pen(AccentBright, 4);
+            using var thumbBrush = new SolidBrush(AccentBright);
+            using var outlinePen = new Pen(Color.FromArgb(220, Accent), 1.5f);
+            g.DrawLine(trackPen, left, trackY, right, trackY);
+            g.DrawLine(fillPen, left, trackY, thumbX, trackY);
+            var thumb = new Rectangle(thumbX - 6, trackY - 7, 12, 14);
+            using var thumbPath = RoundedRectanglePath(thumb, 4);
+            g.FillPath(thumbBrush, thumbPath);
+            g.DrawPath(outlinePen, thumbPath);
+        }
+    }
+
+    private sealed class ToggleSwitch : CheckBox
+    {
+        public ToggleSwitch()
+        {
+            AutoSize = false;
+            Text = string.Empty;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            Cursor = Cursors.Hand;
+            Size = new Size(30, 22);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var track = new Rectangle(2, 3, Width - 4, Height - 6);
+            using var trackPath = RoundedRectanglePath(track, track.Height / 2);
+            using var trackBrush = new SolidBrush(Checked ? Accent : Border);
+            e.Graphics.FillPath(trackBrush, trackPath);
+            int diameter = Math.Max(10, track.Height - 4);
+            int x = Checked ? track.Right - diameter - 2 : track.Left + 2;
+            var knob = new Rectangle(x, track.Top + 2, diameter, diameter);
+            using var knobBrush = new SolidBrush(TextMain);
+            e.Graphics.FillEllipse(knobBrush, knob);
+        }
+    }
 
     private static Label MakeFieldLabel(string text) => new()
     {
@@ -888,19 +1501,75 @@ public sealed class MainForm : Form
     {
         control.BackColor = Surface;
         control.ForeColor = TextMain;
-        if (control is TextBoxBase tb) tb.BorderStyle = BorderStyle.FixedSingle;
+        if (control is TextBoxBase tb)
+        {
+            tb.BorderStyle = BorderStyle.None;
+            tb.Padding = new Padding(6);
+            ApplyRoundedControl(tb, 8);
+        }
         if (control is NumericUpDown nud)
         {
             nud.BackColor = Surface;
             nud.ForeColor = TextMain;
+            nud.BorderStyle = BorderStyle.None;
+            ApplyRoundedControl(nud, 8);
         }
+    }
+
+    private static Button MakeAudioDropButton(ComboBox combo)
+    {
+        var button = new Button
+        {
+            Text = "⌄",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Accent,
+            ForeColor = TextMain,
+            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            TabStop = false
+        };
+        button.FlatAppearance.BorderSize = 0;
+        button.FlatAppearance.BorderColor = AccentBright;
+        button.FlatAppearance.MouseOverBackColor = AccentBright;
+        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(72, 31, 112);
+        ApplyRoundedButton(button, 10);
+        button.Click += (_, _) => SendMessage(combo.Handle, 0x014F, new IntPtr(1), IntPtr.Zero);
+        return button;
+    }
+
+    private static void StyleComboBox(ComboBox combo)
+    {
+        combo.DrawMode = DrawMode.OwnerDrawFixed;
+        combo.ItemHeight = 24;
+        combo.BackColor = Surface;
+        combo.ForeColor = TextMain;
+        combo.FlatStyle = FlatStyle.Flat;
+        ApplyRoundedComboBox(combo, 8);
+        combo.DrawItem -= ThemeComboBoxDrawItem;
+        combo.DrawItem += ThemeComboBoxDrawItem;
+    }
+
+    private static void ThemeComboBoxDrawItem(object? sender, DrawItemEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        e.DrawBackground();
+        var selected = (e.State & DrawItemState.Selected) != 0;
+        using var background = new SolidBrush(selected ? Color.FromArgb(72, 31, 112) : Surface);
+        using var foreground = new SolidBrush(TextMain);
+        e.Graphics.FillRectangle(background, e.Bounds);
+        if (e.Index >= 0 && e.Index < combo.Items.Count)
+        {
+            var itemText = combo.GetItemText(combo.Items[e.Index]);
+            TextRenderer.DrawText(e.Graphics, itemText, combo.Font, Rectangle.Inflate(e.Bounds, -6, 0),
+                TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        }
+        e.DrawFocusRectangle();
     }
 
     private static void StyleButton(Button button, bool primary)
     {
         button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = primary ? Accent : Border;
+        button.FlatAppearance.BorderSize = 0;
         button.BackColor = primary ? Color.FromArgb(72, 31, 112) : Surface2;
         button.ForeColor = TextMain;
         button.Cursor = Cursors.Hand;
@@ -1502,31 +2171,48 @@ public sealed class MainForm : Form
         }
     }
 
+    private static System.Drawing.Drawing2D.GraphicsPath RoundedRectanglePath(Rectangle bounds, int radius)
+    {
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        radius = Math.Max(2, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
+        path.AddArc(bounds.Left, bounds.Top, radius * 2, radius * 2, 180, 90);
+        path.AddArc(bounds.Right - radius * 2, bounds.Top, radius * 2, radius * 2, 270, 90);
+        path.AddArc(bounds.Right - radius * 2, bounds.Bottom - radius * 2, radius * 2, radius * 2, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - radius * 2, radius * 2, radius * 2, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
     private void DrawBlockedWordItem(object? sender, DrawItemEventArgs e)
     {
-        e.DrawBackground();
-        if (e.Index < 0 || e.Index >= words.Items.Count) { e.DrawFocusRectangle(); return; }
+        using (var background = new SolidBrush(Surface))
+            e.Graphics.FillRectangle(background, e.Bounds);
+        if (e.Index < 0 || e.Index >= words.Items.Count) return;
         string value = words.Items[e.Index]?.ToString() ?? "";
         bool hasSound = replacementSounds.TryGetValue(value, out var sound) && !string.IsNullOrWhiteSpace(sound);
         var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
+        using var cardPath = RoundedRectanglePath(outer, 10);
         using var pen = new Pen(Border);
-        using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
-        e.Graphics.FillRectangle(brush, outer); e.Graphics.DrawRectangle(pen, outer);
+        using var brush = new SolidBrush(Surface2);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.FillPath(brush, cardPath); e.Graphics.DrawPath(pen, cardPath);
         var wordRect = new Rectangle(outer.Left + 8, outer.Top + 4, Math.Max(80, outer.Width - 150), 24);
         TextRenderer.DrawText(e.Graphics, value, words.Font, wordRect, TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
         var replacementRect = new Rectangle(outer.Right - 128, outer.Top + 4, 118, 25);
+        using (var replacementPath = RoundedRectanglePath(replacementRect, 6))
         using (var replacementBrush = new SolidBrush(hasSound ? Color.FromArgb(72, 31, 112) : Surface))
         using (var replacementPen = new Pen(hasSound ? Accent : Border))
-        { e.Graphics.FillRectangle(replacementBrush, replacementRect); e.Graphics.DrawRectangle(replacementPen, replacementRect); }
+        { e.Graphics.FillPath(replacementBrush, replacementPath); e.Graphics.DrawPath(replacementPen, replacementPath); }
         string replacementName = hasSound ? $"🔊 {Path.GetFileName(sound!)}" : "Replacement";
         TextRenderer.DrawText(e.Graphics, replacementName, words.Font, replacementRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         if (hasSound)
         {
             DrawVolumeSlider(e.Graphics, GetReplacementSliderRect(index: e.Index), GetReplacementVolume(value));
             var testRect = GetReplacementTestRect(e.Index);
+            using var testPath = RoundedRectanglePath(testRect, 6);
             using var testBrush = new SolidBrush(Color.FromArgb(37, 29, 49));
             using var testPen = new Pen(Border);
-            e.Graphics.FillRectangle(testBrush, testRect); e.Graphics.DrawRectangle(testPen, testRect);
+            e.Graphics.FillPath(testBrush, testPath); e.Graphics.DrawPath(testPen, testPath);
             TextRenderer.DrawText(e.Graphics, "Test", words.Font, testRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         e.DrawFocusRectangle();
@@ -1588,15 +2274,18 @@ public sealed class MainForm : Form
 
     private void DrawSoundboardItem(object? sender, DrawItemEventArgs e)
     {
-        e.DrawBackground();
-        if (e.Index < 0 || e.Index >= soundboard.Items.Count) { e.DrawFocusRectangle(); return; }
+        using (var background = new SolidBrush(Surface))
+            e.Graphics.FillRectangle(background, e.Bounds);
+        if (e.Index < 0 || e.Index >= soundboard.Items.Count) return;
         string trigger = soundboard.Items[e.Index]?.ToString() ?? "";
         soundboardSounds.TryGetValue(trigger, out var path);
         double volume = GetSoundboardVolume(trigger);
         var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
+        using var cardPath = RoundedRectanglePath(outer, 10);
         using var pen = new Pen(Border);
         using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
-        e.Graphics.FillRectangle(brush, outer); e.Graphics.DrawRectangle(pen, outer);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.FillPath(brush, cardPath); e.Graphics.DrawPath(pen, cardPath);
         TextRenderer.DrawText(e.Graphics, trigger, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 4, outer.Width - 16, 24), TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
         string name = string.IsNullOrWhiteSpace(path) ? "No sound" : Path.GetFileName(path);
         TextRenderer.DrawText(e.Graphics, "🔊  " + name, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 27, Math.Max(120, outer.Width - 90), 22), TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
@@ -1605,10 +2294,11 @@ public sealed class MainForm : Form
         var sliderRect = new Rectangle(outer.Left + 8, outer.Bottom - 25, Math.Max(120, outer.Width - 155), 18);
         DrawSoundboardVolumeSlider(e.Graphics, sliderRect, volume);
         var testRect = new Rectangle(outer.Right - 62, outer.Bottom - 30, 58, 28);
+        using var testPath = RoundedRectanglePath(testRect, 6);
         using var testBrush = new SolidBrush(Surface);
         using var testPen = new Pen(Border);
-        e.Graphics.FillRectangle(testBrush, testRect);
-        e.Graphics.DrawRectangle(testPen, testRect);
+        e.Graphics.FillPath(testBrush, testPath);
+        e.Graphics.DrawPath(testPen, testPath);
         TextRenderer.DrawText(e.Graphics, "Test", soundboard.Font, testRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         e.DrawFocusRectangle();
     }
@@ -2996,6 +3686,58 @@ public sealed class MainForm : Form
         }
     }
 
+    private static void ApplyRoundedControl(Control control, int radius = 8)
+    {
+        void Apply()
+        {
+            if (control.Width < 2 || control.Height < 2) return;
+            using var path = RoundedRectanglePath(new Rectangle(0, 0, control.Width - 1, control.Height - 1), radius);
+            control.Region?.Dispose();
+            control.Region = new Region(path);
+        }
+        control.Resize += (_, _) => Apply();
+        Apply();
+    }
+
+    private static void ApplyRoundedComboBox(ComboBox combo, int radius = 8)
+    {
+        combo.BackColor = Color.FromArgb(72, 31, 112);
+        combo.ForeColor = TextMain;
+        ApplyRoundedControl(combo, radius);
+        combo.Invalidate();
+    }
+
+    private static void ApplyRoundedPanel(Control panel, int radius = 12)
+    {
+        void Apply()
+        {
+            if (panel.Width < 2 || panel.Height < 2) return;
+            using var path = RoundedRectanglePath(new Rectangle(0, 0, panel.Width - 1, panel.Height - 1), radius);
+            panel.Region?.Dispose();
+            panel.Region = new Region(path);
+        }
+        panel.Resize += (_, _) => Apply();
+        Apply();
+    }
+
+    private static void ApplyRoundedButton(Button button, int radius = 10)
+    {
+        void Apply()
+        {
+            if (button.Width < 2 || button.Height < 2) return;
+            using var path = new System.Drawing.Drawing2D.GraphicsPath();
+            path.AddArc(0, 0, radius, radius, 180, 90);
+            path.AddArc(button.Width - radius - 1, 0, radius, radius, 270, 90);
+            path.AddArc(button.Width - radius - 1, button.Height - radius - 1, radius, radius, 0, 90);
+            path.AddArc(0, button.Height - radius - 1, radius, radius, 90, 90);
+            path.CloseFigure();
+            button.Region?.Dispose();
+            button.Region = new Region(path);
+        }
+        button.Resize += (_, _) => Apply();
+        Apply();
+    }
+
     private void ShowOverlaySettings()
     {
         using var dlg = new Form { Text = "Mode overlay settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(340, 190), MaximizeBox = false, MinimizeBox = false, BackColor = Surface, ForeColor = TextMain };
@@ -3017,6 +3759,8 @@ public sealed class MainForm : Form
             return;
         }
         mode.Text = "MODE: " + text;
+        if (Controls.Find("dashboardMode", true).FirstOrDefault() is Label dashboardModeLabel)
+            dashboardModeLabel.Text = engine != null ? "●  VOICEGUARD ACTIVE" : "●  READY WHEN YOU ARE";
         if (engine != null && overlayEnabled)
         {
             modeOverlay ??= new ModeOverlayForm();

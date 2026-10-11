@@ -2,9 +2,17 @@ name: VoiceGuard Windows Installer
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+    inputs:
+      release_version:
+        description: "Exact version to publish (for example 7.0.0)"
+        required: true
+        default: "7.0.0"
+        type: string
+      draft_release:
+        description: "Create the GitHub release as a draft"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -18,24 +26,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calculate and apply next version
+      - name: Validate and apply release version
         shell: powershell
         run: |
+          $next = "${{ inputs.release_version }}"
+          if ($next -notmatch '^\d+\.\d+\.\d+$') { throw "Release version must be MAJOR.MINOR.PATCH, for example 7.0.0." }
+          $tag = "v$next"
+          git fetch --tags
+          if (git tag --list $tag) { throw "Tag $tag already exists. Choose a new version; existing releases will not be overwritten." }
           [xml]$project = Get-Content "VoiceGuard.csproj"
-          $versionNode = $project.Project.PropertyGroup.Version | Select-Object -First 1
-          if (-not $versionNode) { throw "Could not find <Version> in VoiceGuard.csproj." }
-          $current = [version]$versionNode
-          $major = $current.Major
-          $minor = $current.Minor
-          $patch = $current.Build + 1
-          if ($patch -ge 10) { $patch = 0; $minor++ }
-          $next = "$major.$minor.$patch"
-          Write-Host "Current version: $current"
-          Write-Host "Next version:    $next"
           $csproj = Get-Content "VoiceGuard.csproj" -Raw
           $csproj = $csproj -replace '<Version>[^<]+</Version>', "<Version>$next</Version>"
-          $csproj = $csproj -replace '<AssemblyVersion>[^<]+</AssemblyVersion>', "<AssemblyVersion>$major.$minor.$patch.0</AssemblyVersion>"
-          $csproj = $csproj -replace '<FileVersion>[^<]+</FileVersion>', "<FileVersion>$major.$minor.$patch.0</FileVersion>"
+          $csproj = $csproj -replace '<AssemblyVersion>[^<]+</AssemblyVersion>', "<AssemblyVersion>$next.0</AssemblyVersion>"
+          $csproj = $csproj -replace '<FileVersion>[^<]+</FileVersion>', "<FileVersion>$next.0</FileVersion>"
           Set-Content "VoiceGuard.csproj" $csproj -Encoding UTF8
           "VOICEGUARD_VERSION=$next" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -119,28 +122,6 @@ jobs:
           path: installer/VoiceGuard_Setup_*.exe
           if-no-files-found: error
           retention-days: 30
-
-      - name: Write release notes
-        shell: powershell
-        run: |
-          @"
-          ## What's New in $env:VOICEGUARD_VERSION
-
-          ### In-App Updates
-          - Added a **Check for updates** button directly in VoiceGuard.
-          - VoiceGuard automatically checks for newer releases when it starts.
-          - When an update is available, the button changes to **Update to X.Y.Z**.
-          - The updater downloads the new installer and launches it automatically.
-          - VoiceGuard closes before the installer replaces the installed application.
-
-          ### Soundboard Timing Fix
-          - Fixed the timing of **local soundboard playback**.
-          - The soundboard audio heard through your headset is now synchronized with the configured VoiceGuard delay.
-          - The local copy no longer starts immediately while the game receives the delayed version.
-          - Local and transmitted soundboard audio now start in sync.
-          - Soundboard PTT remains held for the complete delayed transmission.
-
-          "@ | Set-Content "release-notes.md" -Encoding UTF8
 
       - name: Create GitHub release
         env:
