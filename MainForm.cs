@@ -657,6 +657,7 @@ public sealed class MainForm : Form
         delayPanel.Controls.Add(delayLabel);
         var delayBox = MakeInputBox(delay, 70);
         delayBox.Location = new Point(0, 24);
+        delay.TextAlign = HorizontalAlignment.Center;
         delayPanel.Controls.Add(delayBox);
         delayBox.BringToFront();
         delay.Minimum = 2;
@@ -857,8 +858,8 @@ public sealed class MainForm : Form
             ApplyRoundedPanel(card, 10);
             var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
             toggle.Dock = DockStyle.Right;
-            toggle.Width = 54;
-            toggle.Height = 30;
+            toggle.Width = 42;
+            toggle.Height = 24;
             toggle.BackColor = Surface2;
             card.Controls.Add(toggle);
             card.Controls.Add(label);
@@ -982,8 +983,8 @@ public sealed class MainForm : Form
         left.BackColor = Bg;
         left.AutoScroll = false;
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
         foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel }) control.Parent?.Controls.Remove(control);
         var inputCard = MakeAudioCard("Microphone input");
         inputCard.Margin = new Padding(0, 0, 0, 12);
@@ -1002,6 +1003,14 @@ public sealed class MainForm : Form
         outputVolumePanel.SetBounds(18, 106, 100, 54); outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         outputCard.Controls.AddRange(new Control[] { outputLabel, output, outputVolumePanel });
         outputCard.Resize += (_, _) => { var w = Math.Max(100, outputCard.ClientSize.Width - 42); output.Width = w; outputVolumePanel.Width = w; };
+        left.Resize += (_, _) =>
+        {
+            var gap = 12;
+            var availableHeight = Math.Max(0, left.ClientSize.Height - gap);
+            var firstHeight = availableHeight / 2;
+            inputCard.SetBounds(0, 0, Math.Max(1, left.ClientSize.Width - 14), firstHeight);
+            outputCard.SetBounds(0, firstHeight + gap, Math.Max(1, left.ClientSize.Width - 14), availableHeight - firstHeight);
+        };
         left.ResumeLayout(true);
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
@@ -1331,18 +1340,18 @@ public sealed class MainForm : Form
             Text = string.Empty;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             Cursor = Cursors.Hand;
-            Size = new Size(54, 30);
+            Size = new Size(42, 24);
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(BackColor);
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var track = new Rectangle(2, 5, Width - 4, Height - 10);
+            var track = new Rectangle(2, 3, Width - 4, Height - 6);
             using var trackPath = RoundedRectanglePath(track, track.Height / 2);
             using var trackBrush = new SolidBrush(Checked ? Accent : Border);
             e.Graphics.FillPath(trackBrush, trackPath);
-            int diameter = Math.Max(12, track.Height - 4);
+            int diameter = Math.Max(10, track.Height - 4);
             int x = Checked ? track.Right - diameter - 2 : track.Left + 2;
             var knob = new Rectangle(x, track.Top + 2, diameter, diameter);
             using var knobBrush = new SolidBrush(TextMain);
