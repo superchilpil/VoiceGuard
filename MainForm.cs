@@ -90,7 +90,7 @@ public sealed class MainForm : Form
     private readonly ToggleSwitch minimizeToTray = new();
     private readonly TextBox startStopHotkey = new();
     private readonly NotifyIcon trayIcon = new();
-    private readonly Button updateButton = new();
+    private readonly HeaderActionButton updateButton = new();
     private static readonly HttpClient UpdateHttpClient = CreateUpdateHttpClient();
     private const string GitHubLatestReleaseUrl = "https://api.github.com/repos/superchilpil/VoiceGuard/releases/latest";
     private string? availableUpdateVersion;
@@ -1435,6 +1435,11 @@ public sealed class MainForm : Form
             g.FillPath(thumbBrush, thumbPath);
             g.DrawPath(outlinePen, thumbPath);
         }
+    }
+
+    private sealed class HeaderActionButton : Button
+    {
+        protected override bool ShowFocusCues => false;
     }
 
     private sealed class ToggleSwitch : CheckBox
