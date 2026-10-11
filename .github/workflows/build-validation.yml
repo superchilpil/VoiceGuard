@@ -1,0 +1,35 @@
+name: VoiceGuard Build Validation
+
+on:
+  push:
+    branches:
+      - "ui/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore
+        run: dotnet restore VoiceGuard.csproj
+      - name: Build
+        run: dotnet build VoiceGuard.csproj --configuration Release --no-restore
+      - name: Publish self-contained Windows x64
+        run: dotnet publish VoiceGuard.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore /p:PublishSingleFile=false /p:PublishTrimmed=false --output publish
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish/VoiceGuard.exe")) {
+            throw "VoiceGuard.exe was not produced."
+          }
