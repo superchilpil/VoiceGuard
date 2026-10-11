@@ -6,7 +6,7 @@ namespace VoiceGuard;
 
 internal static class Program
 {
-    private const string SingleInstanceMutexName = "Local\\\\JackTheGooner.VoiceGuard.SingleInstance";
+    private const string SingleInstanceMutexName = "Local\\JackTheGooner.VoiceGuard.SingleInstance";
     private static Mutex? singleInstanceMutex;
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
