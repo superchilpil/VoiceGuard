@@ -880,7 +880,7 @@ public sealed class MainForm : Form
                 if (editor is Panel editorPanel)
                 {
                     editorPanel.Padding = new Padding(1);
-                    editorPanel.BackColor = Border;
+                    editorPanel.BackColor = Color.FromArgb(39, 31, 51);
                     foreach (Control child in editorPanel.Controls)
                     {
                         child.Dock = DockStyle.Fill;
