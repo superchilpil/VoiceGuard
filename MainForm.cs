@@ -222,9 +222,9 @@ public sealed class MainForm : Form
         ApplyWindowAndTaskbarIcon();
 
         Text = "VoiceGuard — 6.7";
-        Width = 1440;
-        Height = 850;
-        MinimumSize = new Size(1440, 850);
+        Width = 1100;
+        Height = 780;
+        MinimumSize = new Size(1100, 740);
         WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
@@ -371,11 +371,11 @@ public sealed class MainForm : Form
         var main = new TableLayoutPanel
         {
             Location = new Point(0, 88), Width = 1, Height = 1, AutoSize = false,
-            ColumnCount = 5, RowCount = 1, Padding = new Padding(24, 10, 24, 22),
+            ColumnCount = 6, RowCount = 1, Padding = new Padding(18, 10, 18, 18),
             Margin = new Padding(0), BackColor = Bg
         };
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var i = 1; i < 5; i++) main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        for (var i = 1; i < 6; i++) main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
         pageHost.Controls.Add(main);
         pageHost.Resize += (_, _) =>
         {
@@ -383,7 +383,7 @@ public sealed class MainForm : Form
             main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
         };
         var navButtons = new List<Button>();
-        var navLabels = new[] { "Dashboard", "Audio", "Word Filter", "Soundboard", "Logs" };
+        var navLabels = new[] { "⌂   Dashboard", "♫   Audio", "☷   Word Filter", "▣   Soundboard", "≡   Logs", "⚙   Settings" };
         Action<int> showPage = _ => { };
         for (var i = 0; i < navLabels.Length; i++)
         {
@@ -454,10 +454,32 @@ public sealed class MainForm : Form
                 BackColor = Surface, Padding = new Padding(20), Margin = new Padding(0, 0, 14, 14),
                 Dock = DockStyle.Fill
             };
+            void ApplyRoundedCardRegion()
+            {
+                if (card.Width < 2 || card.Height < 2) return;
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                const int radius = 14;
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(card.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(card.Width - radius - 1, card.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, card.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
+                card.Region?.Dispose();
+                card.Region = new Region(path);
+            }
+            card.Resize += (_, _) => ApplyRoundedCardRegion();
             card.Paint += (_, e) =>
             {
+                using var path = new System.Drawing.Drawing2D.GraphicsPath();
+                const int radius = 14;
+                path.AddArc(0, 0, radius, radius, 180, 90);
+                path.AddArc(card.Width - radius - 1, 0, radius, radius, 270, 90);
+                path.AddArc(card.Width - radius - 1, card.Height - radius - 1, radius, radius, 0, 90);
+                path.AddArc(0, card.Height - radius - 1, radius, radius, 90, 90);
+                path.CloseFigure();
                 using var pen = new Pen(Border);
-                e.Graphics.DrawRectangle(pen, 0, 0, Math.Max(0, card.Width - 1), Math.Max(0, card.Height - 1));
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.DrawPath(pen, path);
             };
             card.Controls.Add(new Label
             {
@@ -477,30 +499,30 @@ public sealed class MainForm : Form
         });
         var dashboardMode = new Label
         {
-            Name = "dashboardMode", Text = "MODE: STOPPED", AutoSize = false,
-            Location = new Point(260, 88), Size = new Size(230, 24), ForeColor = AccentBright,
+            Name = "dashboardMode", Text = "●  READY WHEN YOU ARE", AutoSize = false,
+            Location = new Point(260, 88), Size = new Size(230, 24), ForeColor = Success,
             Font = new Font("Segoe UI", 10F, FontStyle.Bold)
         };
         heroCard.Controls.Add(dashboardMode);
         var dashboardStatus = new Label
         {
-            Name = "dashboardStatus", Text = "Whisper loads automatically when VoiceGuard starts.",
+            Name = "dashboardStatus", Text = "Your audio filter is currently stopped.",
             AutoSize = false, Location = new Point(260, 113), Size = new Size(250, 35),
             ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
         };
         heroCard.Controls.Add(dashboardStatus);
 
-        var readyCard = MakeDashboardCard("Readiness");
+        var readyCard = MakeDashboardCard("Voice filter overview");
         dashboard.Controls.Add(readyCard, 1, 0);
         readyCard.Controls.Add(new Label
         {
-            Text = "READY WHEN YOU ARE", AutoSize = true, Location = new Point(20, 54),
-            ForeColor = Success, Font = new Font("Segoe UI", 12F, FontStyle.Bold)
+            Text = "PTT PASSTHROUGH", AutoSize = true, Location = new Point(20, 54),
+            ForeColor = AccentBright, Font = new Font("Segoe UI", 12F, FontStyle.Bold)
         });
         readyCard.Controls.Add(new Label
         {
-            Text = "Start VoiceGuard when your voice chat is ready.",
-            AutoSize = false, Location = new Point(20, 82), Size = new Size(260, 48),
+            Text = "Your push-to-talk key is passed through while VoiceGuard filters speech.",
+            AutoSize = false, Location = new Point(20, 82), Size = new Size(270, 55),
             ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
         });
 
@@ -546,6 +568,26 @@ public sealed class MainForm : Form
 
         main.Controls.Add(left, 1, 0);
         ApplyDarkScrollbarTheme(left);
+
+        // Dedicated settings page for app preferences and overlay configuration.
+        var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
+        main.Controls.Add(settingsPanel, 5, 0);
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(620, 300), Padding = new Padding(22) };
+        settingsPanel.Controls.Add(settingsCard);
+        settingsCard.Controls.Add(new Label { Text = "APPLICATION SETTINGS", AutoSize = true, Location = new Point(22, 18), ForeColor = TextDim, Font = new Font("Segoe UI", 9F, FontStyle.Bold) });
+        var overlayPageButton = new Button { Text = "Configure mode overlay  →", Location = new Point(22, 58), Size = new Size(260, 42) };
+        StyleButton(overlayPageButton, true);
+        overlayPageButton.Click += (_, _) => ShowOverlaySettings();
+        settingsCard.Controls.Add(overlayPageButton);
+        settingsCard.Controls.Add(startWithWindows);
+        startWithWindows.Location = new Point(22, 122);
+        startWithWindows.Text = "Start VoiceGuard with Windows";
+        startWithWindows.AutoSize = true;
+        settingsCard.Controls.Add(minimizeToTray);
+        minimizeToTray.Location = new Point(22, 158);
+        minimizeToTray.Text = "Minimize to system tray";
+        minimizeToTray.AutoSize = true;
+        settingsCard.Controls.Add(new Label { Text = "These options retain their existing saved settings.", AutoSize = true, Location = new Point(22, 210), ForeColor = TextDim });
 
         var inputLabel = MakeFieldLabel("Input");
         left.Controls.Add(inputLabel, 0, 0);
@@ -1006,8 +1048,8 @@ public sealed class MainForm : Form
         logHost.Controls.Add(log);
         showPage = pageIndex =>
         {
-            selectedPage = Math.Clamp(pageIndex, 0, 4);
-            var widths = new[] { 0, 0, 0, 0, 0 };
+            selectedPage = Math.Clamp(pageIndex, 0, 5);
+            var widths = new[] { 0, 0, 0, 0, 0, 0 };
             widths[selectedPage] = 1;
             main.SuspendLayout();
             main.ColumnStyles.Clear();
@@ -1030,18 +1072,19 @@ public sealed class MainForm : Form
             wordPanel.Visible = selectedPage == 2;
             soundboardPanel.Visible = selectedPage == 3;
             logSection.Visible = selectedPage == 4;
+            settingsPanel.Visible = selectedPage == 5;
             pageTitle.Text = navLabels[selectedPage];
             pageSubtitle.Text = selectedPage switch
             {
                 0 => "Your Voice Filtered for Snowflakes",
-                1 => "Manage devices, output level, and transmission controls.",
+                1 => "Manage your microphone, virtual-cable output, and volume.",
                 2 => "Configure blocked words, aliases, and replacement sounds.",
                 3 => "Manage soundboard phrases, aliases, and private playback.",
-                _ => "Review VoiceGuard runtime and speech-filter activity."
+                4 => "Review VoiceGuard runtime and speech-filter activity.",
+                _ => "Configure startup, tray behavior, and the mode overlay."
             };
-            statusBadge.Text = engine != null ? "●  VOICEGUARD ACTIVE" : "●  READY WHEN YOU ARE";
-            statusBadge.ForeColor = engine != null ? Success : TextDim;
-            Text = "VoiceGuard — " + navLabels[selectedPage];
+            statusBadge.Visible = false;
+            Text = "VoiceGuard — " + navLabels[selectedPage].Trim();
         };
         showPage(0);
 
