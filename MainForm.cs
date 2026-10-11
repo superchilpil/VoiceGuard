@@ -1018,27 +1018,22 @@ public sealed class MainForm : Form
         var volumeCard = MakeAudioCard("Headset output volume");
         volumeCard.Margin = new Padding(0, 0, 0, 12);
         volumeCard.Dock = DockStyle.Fill;
-        outputVolumePanel.SetBounds(18, 38, 100, 48);
+        outputVolumePanel.SetBounds(18, 38, 100, 54);
         outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         outputVolumeLabel.Location = new Point(0, 0);
         outputVolumeLabel.Dock = DockStyle.None;
         outputVolumeLabel.AutoSize = true;
-        outputVolumePanel.Controls.Remove(outputVolumeLabel);
-        volumeCard.Controls.Add(outputVolumeLabel);
-        volumeCard.Controls.Add(outputVolume);
-        volumeCard.Controls.Add(outputVolumeValue);
-        outputVolume.Dock = DockStyle.None;
-        outputVolume.SetBounds(0, 20, 100, 28);
-        outputVolumeValue.Dock = DockStyle.None;
+        outputVolume.Dock = DockStyle.Bottom;
+        outputVolume.Height = 28;
+        outputVolume.Margin = new Padding(0, 0, 48, 0);
+        outputVolumeValue.Dock = DockStyle.Right;
         outputVolumeValue.SetBounds(0, 20, 45, 28);
+        volumeCard.Controls.Add(outputVolumePanel);
         volumeCard.Resize += (_, _) =>
         {
             var w = Math.Max(100, volumeCard.ClientSize.Width - 42);
-            outputVolumePanel.Width = w;
-            outputVolume.SetBounds(0, 20, Math.Max(60, w - 52), 28);
-            outputVolumeValue.SetBounds(Math.Max(60, w - 46), 20, 45, 28);
+            outputVolumePanel.SetBounds(18, 38, w, 54);
         };
-        volumeCard.Controls.Add(outputVolumePanel);
         left.Controls.Add(volumeCard, 0, 2);
         left.Resize += (_, _) =>
         {
