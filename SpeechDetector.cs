@@ -360,8 +360,14 @@ public sealed class SpeechDetector : IAsyncDisposable
 
         processor?.Dispose();
 
+        // Keep Whisper from consuming every logical CPU thread while the user is
+        // gaming/streaming. The default is all hardware threads, which can cause
+        // noticeable system contention even when the encoder is offloaded to an NPU.
+        const int whisperCpuThreads = 4;
         var builder = factory.CreateBuilder()
-            .WithLanguage("en");
+            .WithLanguage("en")
+            .WithThreads(whisperCpuThreads);
+        log($"WHISPER CPU THREAD LIMIT: {whisperCpuThreads}");
 
         // Optional Intel NPU acceleration. This touches only Whisper initialization;
         // the audio engine, PTT state machine, VAD, candidate clustering, and censor
