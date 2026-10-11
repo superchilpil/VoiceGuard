@@ -3290,6 +3290,8 @@ public sealed class MainForm : Form
             return;
         }
         mode.Text = "MODE: " + text;
+        if (Controls.Find("dashboardMode", true).FirstOrDefault() is Label dashboardModeLabel)
+            dashboardModeLabel.Text = engine != null ? "●  VOICEGUARD ACTIVE" : "●  READY WHEN YOU ARE";
         if (engine != null && overlayEnabled)
         {
             modeOverlay ??= new ModeOverlayForm();
