@@ -614,6 +614,7 @@ public sealed class MainForm : Form
         outputVolume.Height = 28;
         outputVolume.BackColor = Surface2;
         outputVolume.ForeColor = AccentBright;
+        outputVolume.SetStyle(ControlStyles.UserPaint, true);
         outputVolume.Minimum = 0;
         outputVolume.Maximum = 150;
         outputVolume.TickFrequency = 25;
@@ -860,6 +861,7 @@ public sealed class MainForm : Form
             ApplyRoundedPanel(card, 10);
             var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
             toggle.Dock = DockStyle.None;
+            toggle.Size = new Size(21, 24);
             toggle.SetBounds(0, 0, 21, 24);
             toggle.BackColor = Surface2;
             card.Controls.Add(toggle);
@@ -867,7 +869,8 @@ public sealed class MainForm : Form
             void LayoutToggle()
             {
                 label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 90), card.ClientSize.Height);
-                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 44), (card.ClientSize.Height - 24) / 2, 21, 24);
+                toggle.Size = new Size(21, 24);
+                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 50), (card.ClientSize.Height - 24) / 2, 21, 24);
             }
             card.Resize += (_, _) => LayoutToggle();
             LayoutToggle();
