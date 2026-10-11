@@ -429,7 +429,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 16,
+            RowCount = 17,
             Margin = new Padding(0, 0, 14, 0),
             Padding = new Padding(0),
             BackColor = Bg,
@@ -894,7 +894,7 @@ public sealed class MainForm : Form
 
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 570), ColumnCount = 1, RowCount = 7, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false, GrowStyle = TableLayoutPanelGrowStyle.FixedSize };
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 570), ColumnCount = 1, RowCount = 7, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false };
         settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (var row = 0; row < 7; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row < 5 ? 88 : 58));
         settingsCard.Controls.Add(settingsStack);
