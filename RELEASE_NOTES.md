@@ -63,3 +63,8 @@
 - Removed selected-item blue/purple fill and focus highlighting from Word Filter and Soundboard rows.
 - Reduced Audio device selector minimum widths and applied rounded clipping to dropdown controls.
 - Applied rounded clipping to Settings text/numeric fields and removed their native inset borders.
+## Layout Refinement
+- Expanded VoiceGuard status across the dashboard and restored the Start VoiceGuard button in that card; removed the redundant PTT overview card.
+- Split Audio into separate microphone-input and virtual-cable-output cards, placed vertically, and removed the pointless page scrollbar.
+- Converted Settings to a single-column stack of individual setting cards.
+- Removed native list borders that were showing hover/focus outlines in Word Filter and Soundboard, and removed standard button outlines for a cleaner rounded style.
