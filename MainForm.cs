@@ -1945,6 +1945,18 @@ public sealed class MainForm : Form
         }
     }
 
+    private static System.Drawing.Drawing2D.GraphicsPath RoundedRectanglePath(Rectangle bounds, int radius)
+    {
+        var path = new System.Drawing.Drawing2D.GraphicsPath();
+        radius = Math.Max(2, Math.Min(radius, Math.Min(bounds.Width, bounds.Height) / 2));
+        path.AddArc(bounds.Left, bounds.Top, radius * 2, radius * 2, 180, 90);
+        path.AddArc(bounds.Right - radius * 2, bounds.Top, radius * 2, radius * 2, 270, 90);
+        path.AddArc(bounds.Right - radius * 2, bounds.Bottom - radius * 2, radius * 2, radius * 2, 0, 90);
+        path.AddArc(bounds.Left, bounds.Bottom - radius * 2, radius * 2, radius * 2, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
     private void DrawBlockedWordItem(object? sender, DrawItemEventArgs e)
     {
         e.DrawBackground();
@@ -1952,24 +1964,28 @@ public sealed class MainForm : Form
         string value = words.Items[e.Index]?.ToString() ?? "";
         bool hasSound = replacementSounds.TryGetValue(value, out var sound) && !string.IsNullOrWhiteSpace(sound);
         var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
+        using var cardPath = RoundedRectanglePath(outer, 10);
         using var pen = new Pen(Border);
         using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
-        e.Graphics.FillRectangle(brush, outer); e.Graphics.DrawRectangle(pen, outer);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.FillPath(brush, cardPath); e.Graphics.DrawPath(pen, cardPath);
         var wordRect = new Rectangle(outer.Left + 8, outer.Top + 4, Math.Max(80, outer.Width - 150), 24);
         TextRenderer.DrawText(e.Graphics, value, words.Font, wordRect, TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
         var replacementRect = new Rectangle(outer.Right - 128, outer.Top + 4, 118, 25);
+        using (var replacementPath = RoundedRectanglePath(replacementRect, 6))
         using (var replacementBrush = new SolidBrush(hasSound ? Color.FromArgb(72, 31, 112) : Surface))
         using (var replacementPen = new Pen(hasSound ? Accent : Border))
-        { e.Graphics.FillRectangle(replacementBrush, replacementRect); e.Graphics.DrawRectangle(replacementPen, replacementRect); }
+        { e.Graphics.FillPath(replacementBrush, replacementPath); e.Graphics.DrawPath(replacementPen, replacementPath); }
         string replacementName = hasSound ? $"🔊 {Path.GetFileName(sound!)}" : "Replacement";
         TextRenderer.DrawText(e.Graphics, replacementName, words.Font, replacementRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         if (hasSound)
         {
             DrawVolumeSlider(e.Graphics, GetReplacementSliderRect(index: e.Index), GetReplacementVolume(value));
             var testRect = GetReplacementTestRect(e.Index);
+            using var testPath = RoundedRectanglePath(testRect, 6);
             using var testBrush = new SolidBrush(Color.FromArgb(37, 29, 49));
             using var testPen = new Pen(Border);
-            e.Graphics.FillRectangle(testBrush, testRect); e.Graphics.DrawRectangle(testPen, testRect);
+            e.Graphics.FillPath(testBrush, testPath); e.Graphics.DrawPath(testPen, testPath);
             TextRenderer.DrawText(e.Graphics, "Test", words.Font, testRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         e.DrawFocusRectangle();
@@ -2037,9 +2053,11 @@ public sealed class MainForm : Form
         soundboardSounds.TryGetValue(trigger, out var path);
         double volume = GetSoundboardVolume(trigger);
         var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
+        using var cardPath = RoundedRectanglePath(outer, 10);
         using var pen = new Pen(Border);
         using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
-        e.Graphics.FillRectangle(brush, outer); e.Graphics.DrawRectangle(pen, outer);
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        e.Graphics.FillPath(brush, cardPath); e.Graphics.DrawPath(pen, cardPath);
         TextRenderer.DrawText(e.Graphics, trigger, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 4, outer.Width - 16, 24), TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left);
         string name = string.IsNullOrWhiteSpace(path) ? "No sound" : Path.GetFileName(path);
         TextRenderer.DrawText(e.Graphics, "🔊  " + name, soundboard.Font, new Rectangle(outer.Left + 8, outer.Top + 27, Math.Max(120, outer.Width - 90), 22), TextDim, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
@@ -2048,10 +2066,11 @@ public sealed class MainForm : Form
         var sliderRect = new Rectangle(outer.Left + 8, outer.Bottom - 25, Math.Max(120, outer.Width - 155), 18);
         DrawSoundboardVolumeSlider(e.Graphics, sliderRect, volume);
         var testRect = new Rectangle(outer.Right - 62, outer.Bottom - 30, 58, 28);
+        using var testPath = RoundedRectanglePath(testRect, 6);
         using var testBrush = new SolidBrush(Surface);
         using var testPen = new Pen(Border);
-        e.Graphics.FillRectangle(testBrush, testRect);
-        e.Graphics.DrawRectangle(testPen, testRect);
+        e.Graphics.FillPath(testBrush, testPath);
+        e.Graphics.DrawPath(testPen, testPath);
         TextRenderer.DrawText(e.Graphics, "Test", soundboard.Font, testRect, TextMain, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         e.DrawFocusRectangle();
     }
