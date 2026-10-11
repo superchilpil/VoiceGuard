@@ -488,15 +488,11 @@ public sealed class MainForm : Form
             card.Resize += (_, _) => ApplyRoundedCardRegion();
             card.Paint += (_, e) =>
             {
-                using var path = new System.Drawing.Drawing2D.GraphicsPath();
-                const int radius = 14;
-                path.AddArc(0, 0, radius, radius, 180, 90);
-                path.AddArc(card.Width - radius - 1, 0, radius, radius, 270, 90);
-                path.AddArc(card.Width - radius - 1, card.Height - radius - 1, radius, radius, 0, 90);
-                path.AddArc(0, card.Height - radius - 1, radius, radius, 90, 90);
-                path.CloseFigure();
-                using var pen = new Pen(Border);
+                var bounds = new Rectangle(1, 1, card.Width - 3, card.Height - 3);
+                using var path = RoundedRectanglePath(bounds, 14);
+                using var pen = new Pen(Border, 1F);
                 e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                e.Graphics.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
                 e.Graphics.DrawPath(pen, path);
             };
             card.Controls.Add(new Label
@@ -512,8 +508,8 @@ public sealed class MainForm : Form
         heroCard.Controls.Add(new Label
         {
             Text = "Your Voice Filtered for Snowflakes", Name = "dashboardHeroTitle", AutoSize = false,
-            Location = new Point(20, 42), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-            ForeColor = TextMain, Font = new Font("Segoe UI", 12F, FontStyle.Bold)
+            Location = new Point(20, 42), Size = new Size(0, 38), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            ForeColor = TextMain, Font = new Font("Segoe UI", 10.5F, FontStyle.Bold), AutoEllipsis = false
         });
         var dashboardMode = new Label
         {
@@ -950,22 +946,25 @@ public sealed class MainForm : Form
         inputLabel.Dock = DockStyle.None;
         inputLabel.Height = 22;
         inputLabel.AutoSize = true;
-        input.SetBounds(18, 60, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
+        input.SetBounds(18, 60, Math.Max(100, devicesCard.ClientSize.Width - 42), 30);
         input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        ApplyRoundedComboBox(input, 8);
         outputLabel.Location = new Point(18, 100);
         outputLabel.Dock = DockStyle.None;
         outputLabel.Height = 22;
         outputLabel.AutoSize = true;
-        output.SetBounds(18, 122, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
+        output.SetBounds(18, 122, Math.Max(100, devicesCard.ClientSize.Width - 42), 30);
         output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        ApplyRoundedComboBox(output, 8);
         outputVolumePanel.SetBounds(18, 164, Math.Max(200, devicesCard.ClientSize.Width - 42), 54);
         outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         devicesCard.Controls.AddRange(new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel });
         devicesCard.Resize += (_, _) =>
         {
-            input.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
-            output.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
-            outputVolumePanel.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
+            var controlWidth = Math.Max(100, devicesCard.ClientSize.Width - 42);
+            input.Width = controlWidth;
+            output.Width = controlWidth;
+            outputVolumePanel.Width = controlWidth;
         };
 
 
@@ -1325,11 +1324,18 @@ public sealed class MainForm : Form
     {
         control.BackColor = Surface;
         control.ForeColor = TextMain;
-        if (control is TextBoxBase tb) tb.BorderStyle = BorderStyle.FixedSingle;
+        if (control is TextBoxBase tb)
+        {
+            tb.BorderStyle = BorderStyle.None;
+            tb.Padding = new Padding(6);
+            ApplyRoundedControl(tb, 8);
+        }
         if (control is NumericUpDown nud)
         {
             nud.BackColor = Surface;
             nud.ForeColor = TextMain;
+            nud.BorderStyle = BorderStyle.None;
+            ApplyRoundedControl(nud, 8);
         }
     }
 
@@ -1340,6 +1346,7 @@ public sealed class MainForm : Form
         combo.BackColor = Surface;
         combo.ForeColor = TextMain;
         combo.FlatStyle = FlatStyle.Flat;
+        ApplyRoundedComboBox(combo, 8);
         combo.DrawItem -= ThemeComboBoxDrawItem;
         combo.DrawItem += ThemeComboBoxDrawItem;
     }
@@ -1981,14 +1988,15 @@ public sealed class MainForm : Form
 
     private void DrawBlockedWordItem(object? sender, DrawItemEventArgs e)
     {
-        e.DrawBackground();
-        if (e.Index < 0 || e.Index >= words.Items.Count) { e.DrawFocusRectangle(); return; }
+        using (var background = new SolidBrush(Surface))
+            e.Graphics.FillRectangle(background, e.Bounds);
+        if (e.Index < 0 || e.Index >= words.Items.Count) return;
         string value = words.Items[e.Index]?.ToString() ?? "";
         bool hasSound = replacementSounds.TryGetValue(value, out var sound) && !string.IsNullOrWhiteSpace(sound);
         var outer = new Rectangle(e.Bounds.Left + 4, e.Bounds.Top + 3, e.Bounds.Width - 8, e.Bounds.Height - 6);
         using var cardPath = RoundedRectanglePath(outer, 10);
         using var pen = new Pen(Border);
-        using var brush = new SolidBrush(e.State.HasFlag(DrawItemState.Selected) ? Color.FromArgb(65, 34, 92) : Surface2);
+        using var brush = new SolidBrush(Surface2);
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         e.Graphics.FillPath(brush, cardPath); e.Graphics.DrawPath(pen, cardPath);
         var wordRect = new Rectangle(outer.Left + 8, outer.Top + 4, Math.Max(80, outer.Width - 150), 24);
@@ -2069,8 +2077,9 @@ public sealed class MainForm : Form
 
     private void DrawSoundboardItem(object? sender, DrawItemEventArgs e)
     {
-        e.DrawBackground();
-        if (e.Index < 0 || e.Index >= soundboard.Items.Count) { e.DrawFocusRectangle(); return; }
+        using (var background = new SolidBrush(Surface))
+            e.Graphics.FillRectangle(background, e.Bounds);
+        if (e.Index < 0 || e.Index >= soundboard.Items.Count) return;
         string trigger = soundboard.Items[e.Index]?.ToString() ?? "";
         soundboardSounds.TryGetValue(trigger, out var path);
         double volume = GetSoundboardVolume(trigger);
@@ -3478,6 +3487,25 @@ public sealed class MainForm : Form
             MessageBox.Show($"VoiceGuard could not install the update.\r\n\r\n{ex.Message}",
                 "VoiceGuard update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static void ApplyRoundedControl(Control control, int radius = 8)
+    {
+        void Apply()
+        {
+            if (control.Width < 2 || control.Height < 2) return;
+            using var path = RoundedRectanglePath(new Rectangle(0, 0, control.Width - 1, control.Height - 1), radius);
+            control.Region?.Dispose();
+            control.Region = new Region(path);
+        }
+        control.Resize += (_, _) => Apply();
+        Apply();
+    }
+
+    private static void ApplyRoundedComboBox(ComboBox combo, int radius = 8)
+    {
+        ApplyRoundedControl(combo, radius);
+        combo.Invalidate();
     }
 
     private static void ApplyRoundedPanel(Panel panel, int radius = 12)
