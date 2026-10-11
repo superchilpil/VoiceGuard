@@ -829,7 +829,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 520), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 650), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -844,33 +844,28 @@ public sealed class MainForm : Form
 
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsGrid = new TableLayoutPanel { Location = new Point(22, 112), Size = new Size(500, 206), ColumnCount = 2, RowCount = 3, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
-        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        for (var row = 0; row < 3; row++) settingsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
-        settingsCard.Controls.Add(settingsGrid);
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 370), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
+        settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (var row = 0; row < 5; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+        settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        settingsCard.Controls.Add(settingsStack);
         var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
-        for (var i = 0; i < settingsGridItems.Length; i++)
+        foreach (var item in settingsGridItems)
         {
-            settingsGridItems[i].Dock = DockStyle.Fill;
-            settingsGridItems[i].Margin = new Padding(0, 0, 14, 6);
-            settingsGrid.Controls.Add(settingsGridItems[i], i % 2, i / 2);
+            item.Dock = DockStyle.Fill; item.Margin = new Padding(0, 0, 0, 8); item.Padding = new Padding(12, 8, 12, 6); item.BackColor = Surface2;
+            ApplyRoundedPanel(item, 10); settingsStack.Controls.Add(item);
         }
         startupPanel.Parent?.Controls.Remove(startupPanel);
-        startupPanel.Dock = DockStyle.None;
-        startupPanel.Location = new Point(22, 334);
-        startupPanel.Size = new Size(460, 56);
-        startupPanel.BackColor = Surface;
-        startupPanel.RowStyles.Clear();
-        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        startWithWindows.BackColor = Surface;
-        minimizeToTray.BackColor = Surface;
-        settingsCard.Controls.Add(startupPanel);
-        var settingsBrand = new PictureBox { Location = new Point(22, 400), Size = new Size(220, 95), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
+        startupPanel.Dock = DockStyle.Fill; startupPanel.Margin = new Padding(0); startupPanel.Padding = new Padding(12, 8, 12, 6); startupPanel.BackColor = Surface2;
+        ApplyRoundedPanel(startupPanel, 10); startWithWindows.BackColor = Surface2; minimizeToTray.BackColor = Surface2;
+        settingsStack.Controls.Add(startupPanel);
+        settingsPanel.AutoScroll = true;
+        settingsPanel.Resize += (_, _) => settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
+        settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
+        var settingsBrand = new PictureBox { Location = new Point(22, 500), Size = new Size(220, 95), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
-        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 430), ForeColor = TextDim });
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 530), ForeColor = TextDim });
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
