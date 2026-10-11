@@ -222,9 +222,9 @@ public sealed class MainForm : Form
         ApplyWindowAndTaskbarIcon();
 
         Text = "VoiceGuard — 6.7";
-        Width = 1100;
+        Width = 825;
         Height = 780;
-        MinimumSize = new Size(1100, 740);
+        MinimumSize = new Size(825, 740);
         WindowState = FormWindowState.Normal;
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 9F);
@@ -282,17 +282,13 @@ public sealed class MainForm : Form
             Height = 1,
             BackColor = Border
         };
-        var overlaySettingsButton = new Button { Text = "Overlay settings", Size = new Size(126, 32), Anchor = AnchorStyles.Top | AnchorStyles.Right, Location = new Point(Width - 190, 12) };
-        StyleButton(overlaySettingsButton, false);
-        overlaySettingsButton.Click += (_, _) => ShowOverlaySettings();
-        header.Controls.Add(overlaySettingsButton);
-
         updateButton.Text = "Check for updates";
-        updateButton.Size = new Size(126, 32);
+        updateButton.Size = new Size(138, 34);
         updateButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        updateButton.Location = new Point(Width - 326, 12);
+        updateButton.Location = new Point(Width - 188, 12);
         updateButton.Visible = true;
         StyleButton(updateButton, false);
+        ApplyRoundedButton(updateButton, 10);
         updateButton.Click += async (_, _) => await StartUpdateAsync();
         header.Controls.Add(updateButton);
 
@@ -530,11 +526,13 @@ public sealed class MainForm : Form
         dashboard.Controls.Add(pttCard, 0, 1);
         var dashboardPttValue = new Label
         {
-            Text = ptt.Text, AutoSize = true, Location = new Point(20, 52),
+            Text = ptt.Tag is Keys initialPttKey ? initialPttKey.ToString() : (string.IsNullOrWhiteSpace(ptt.Text) ? "Z" : ptt.Text), AutoSize = true, Location = new Point(20, 52),
             ForeColor = TextMain, Font = new Font("Segoe UI", 24F, FontStyle.Bold)
         };
         pttCard.Controls.Add(dashboardPttValue);
         ptt.KeyDown += (_, _) => dashboardPttValue.Text = ptt.Text;
+        ptt.TextChanged += (_, _) => dashboardPttValue.Text = ptt.Text;
+        pttCard.Resize += (_, _) => dashboardPttValue.Location = new Point(20, 52);
         pttCard.Controls.Add(new Label
         {
             Text = "Your current passthrough key", AutoSize = true,
@@ -572,22 +570,42 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(620, 300), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 610), Padding = new Padding(22) };
+        RoundSurface(settingsCard, 14);
+        settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
         settingsCard.Controls.Add(new Label { Text = "APPLICATION SETTINGS", AutoSize = true, Location = new Point(22, 18), ForeColor = TextDim, Font = new Font("Segoe UI", 9F, FontStyle.Bold) });
         var overlayPageButton = new Button { Text = "Configure mode overlay  →", Location = new Point(22, 58), Size = new Size(260, 42) };
         StyleButton(overlayPageButton, true);
         overlayPageButton.Click += (_, _) => ShowOverlaySettings();
         settingsCard.Controls.Add(overlayPageButton);
-        settingsCard.Controls.Add(startWithWindows);
-        startWithWindows.Location = new Point(22, 122);
-        startWithWindows.Text = "Start VoiceGuard with Windows";
-        startWithWindows.AutoSize = true;
-        settingsCard.Controls.Add(minimizeToTray);
-        minimizeToTray.Location = new Point(22, 158);
-        minimizeToTray.Text = "Minimize to system tray";
-        minimizeToTray.AutoSize = true;
-        settingsCard.Controls.Add(new Label { Text = "These options retain their existing saved settings.", AutoSize = true, Location = new Point(22, 210), ForeColor = TextDim });
+        overlayPageButton.Location = new Point(22, 54);
+        overlayPageButton.Size = new Size(260, 38);
+        ApplyRoundedButton(overlayPageButton, 10);
+
+        var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
+        foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
+        var settingsGrid = new TableLayoutPanel { Location = new Point(22, 112), Size = new Size(500, 300), ColumnCount = 2, RowCount = 3, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
+        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        for (var row = 0; row < 3; row++) settingsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        settingsCard.Controls.Add(settingsGrid);
+        var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
+        for (var i = 0; i < settingsGridItems.Length; i++)
+        {
+            settingsGridItems[i].Dock = DockStyle.Fill;
+            settingsGridItems[i].Margin = new Padding(0, 0, 14, 6);
+            settingsGrid.Controls.Add(settingsGridItems[i], i % 2, i / 2);
+        }
+        startupPanel.Parent?.Controls.Remove(startupPanel);
+        startupPanel.Location = new Point(22, 330);
+        startupPanel.Size = new Size(420, 56);
+        startupPanel.BackColor = Surface;
+        settingsCard.Controls.Add(startupPanel);
+        var settingsBrand = new PictureBox { Location = new Point(22, 438), Size = new Size(240, 120), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(34, 10, 34, 10) };
+        if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
+        settingsCard.Controls.Add(settingsBrand);
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(22, 405), ForeColor = TextDim });
 
         var inputLabel = MakeFieldLabel("Input");
         left.Controls.Add(inputLabel, 0, 0);
@@ -910,11 +928,7 @@ public sealed class MainForm : Form
         start.Parent?.Controls.Remove(start);
         start.SetBounds(18, 38, Math.Max(180, transmissionCard.ClientSize.Width - 42), 40);
         start.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        delayPanel.Parent?.Controls.Remove(delayPanel);
-        delayPanel.SetBounds(18, 88, 140, 52);
-        pttPanel.Parent?.Controls.Remove(pttPanel);
-        pttPanel.SetBounds(174, 88, 120, 52);
-        transmissionCard.Controls.AddRange(new Control[] { start, delayPanel, pttPanel });
+        transmissionCard.Controls.Add(start);
         transmissionCard.Resize += (_, _) =>
         {
             start.Width = Math.Max(180, transmissionCard.ClientSize.Width - 42);
@@ -923,26 +937,17 @@ public sealed class MainForm : Form
 
         var hotkeysCard = MakeAudioCard("Hotkeys");
         left.Controls.Add(hotkeysCard, 0, 1);
-        voiceGuardTriggerPanel.Parent?.Controls.Remove(voiceGuardTriggerPanel);
-        voiceGuardTriggerPanel.SetBounds(18, 40, 190, 54);
-        soundboardListenKeyPanel.Parent?.Controls.Remove(soundboardListenKeyPanel);
-        soundboardListenKeyPanel.SetBounds(18, 102, 190, 54);
-        hotkeyPanel.Parent?.Controls.Remove(hotkeyPanel);
-        hotkeyPanel.SetBounds(18, 164, 210, 54);
-        hotkeysCard.Controls.AddRange(new Control[] { voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel });
+        hotkeysCard.Controls.Add(new Label { Text = "Configure trigger, listen, and start/stop keys in Settings.", AutoSize = false, Location = new Point(18, 48), Size = new Size(230, 80), ForeColor = TextDim });
 
         var preferencesCard = MakeAudioCard("Preferences & status");
         left.Controls.Add(preferencesCard, 1, 1);
-        startupPanel.Parent?.Controls.Remove(startupPanel);
-        startupPanel.SetBounds(18, 42, Math.Max(180, preferencesCard.ClientSize.Width - 36), 56);
         mode.Parent?.Controls.Remove(mode);
         mode.SetBounds(18, 112, Math.Max(180, preferencesCard.ClientSize.Width - 36), 34);
         status.Parent?.Controls.Remove(status);
         status.SetBounds(18, 150, Math.Max(180, preferencesCard.ClientSize.Width - 36), 58);
-        preferencesCard.Controls.AddRange(new Control[] { startupPanel, mode, status });
+        preferencesCard.Controls.AddRange(new Control[] { mode, status });
         preferencesCard.Resize += (_, _) =>
         {
-            startupPanel.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
             mode.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
             status.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
         };
@@ -3407,6 +3412,24 @@ public sealed class MainForm : Form
             MessageBox.Show($"VoiceGuard could not install the update.\r\n\r\n{ex.Message}",
                 "VoiceGuard update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static void ApplyRoundedButton(Button button, int radius = 10)
+    {
+        void Apply()
+        {
+            if (button.Width < 2 || button.Height < 2) return;
+            using var path = new System.Drawing.Drawing2D.GraphicsPath();
+            path.AddArc(0, 0, radius, radius, 180, 90);
+            path.AddArc(button.Width - radius - 1, 0, radius, radius, 270, 90);
+            path.AddArc(button.Width - radius - 1, button.Height - radius - 1, radius, radius, 0, 90);
+            path.AddArc(0, button.Height - radius - 1, radius, radius, 90, 90);
+            path.CloseFigure();
+            button.Region?.Dispose();
+            button.Region = new Region(path);
+        }
+        button.Resize += (_, _) => Apply();
+        Apply();
     }
 
     private void ShowOverlaySettings()
