@@ -22,3 +22,9 @@
 - The local copy no longer starts immediately while the game receives the delayed version.
 - Local and transmitted soundboard audio now start in sync.
 - Soundboard PTT remains held for the complete delayed transmission.
+
+## UI Redesign Follow-up (Testing Branch)
+- Replaced the combined Dashboard & Audio view with a dedicated dashboard featuring a VoiceGuard status hero, Start/Stop action, readiness card, PTT key and audio-delay cards, and quick setup guidance.
+- Added a separate Audio navigation page and kept Word Filter, Soundboard, and Logs as focused pages.
+- Kept the existing audio engine and PTT passthrough logic unchanged.
+- The redesign remains under validation on `ui/jtg-rgb-redesign`; it is not a stable release.
