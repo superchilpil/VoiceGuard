@@ -526,7 +526,7 @@ public sealed class MainForm : Form
         dashboard.Controls.Add(pttCard, 0, 1);
         var dashboardPttValue = new Label
         {
-            Text = ptt.Tag is Keys initialPttKey ? initialPttKey.ToString() : (string.IsNullOrWhiteSpace(ptt.Text) ? "Z" : ptt.Text), AutoSize = true, Location = new Point(20, 52),
+            Name = "dashboardPttValue", Text = ptt.Tag is Keys initialPttKey ? initialPttKey.ToString() : (string.IsNullOrWhiteSpace(ptt.Text) ? "Z" : ptt.Text), AutoSize = true, Location = new Point(20, 52),
             ForeColor = TextMain, Font = new Font("Segoe UI", 24F, FontStyle.Bold)
         };
         pttCard.Controls.Add(dashboardPttValue);
@@ -566,46 +566,6 @@ public sealed class MainForm : Form
 
         main.Controls.Add(left, 1, 0);
         ApplyDarkScrollbarTheme(left);
-
-        // Dedicated settings page for app preferences and overlay configuration.
-        var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
-        main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 610), Padding = new Padding(22) };
-        RoundSurface(settingsCard, 14);
-        settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
-        settingsPanel.Controls.Add(settingsCard);
-        settingsCard.Controls.Add(new Label { Text = "APPLICATION SETTINGS", AutoSize = true, Location = new Point(22, 18), ForeColor = TextDim, Font = new Font("Segoe UI", 9F, FontStyle.Bold) });
-        var overlayPageButton = new Button { Text = "Configure mode overlay  →", Location = new Point(22, 58), Size = new Size(260, 42) };
-        StyleButton(overlayPageButton, true);
-        overlayPageButton.Click += (_, _) => ShowOverlaySettings();
-        settingsCard.Controls.Add(overlayPageButton);
-        overlayPageButton.Location = new Point(22, 54);
-        overlayPageButton.Size = new Size(260, 38);
-        ApplyRoundedButton(overlayPageButton, 10);
-
-        var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
-        foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsGrid = new TableLayoutPanel { Location = new Point(22, 112), Size = new Size(500, 300), ColumnCount = 2, RowCount = 3, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
-        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        for (var row = 0; row < 3; row++) settingsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
-        settingsCard.Controls.Add(settingsGrid);
-        var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
-        for (var i = 0; i < settingsGridItems.Length; i++)
-        {
-            settingsGridItems[i].Dock = DockStyle.Fill;
-            settingsGridItems[i].Margin = new Padding(0, 0, 14, 6);
-            settingsGrid.Controls.Add(settingsGridItems[i], i % 2, i / 2);
-        }
-        startupPanel.Parent?.Controls.Remove(startupPanel);
-        startupPanel.Location = new Point(22, 330);
-        startupPanel.Size = new Size(420, 56);
-        startupPanel.BackColor = Surface;
-        settingsCard.Controls.Add(startupPanel);
-        var settingsBrand = new PictureBox { Location = new Point(22, 438), Size = new Size(240, 120), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(34, 10, 34, 10) };
-        if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
-        settingsCard.Controls.Add(settingsBrand);
-        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(22, 405), ForeColor = TextDim });
 
         var inputLabel = MakeFieldLabel("Input");
         left.Controls.Add(inputLabel, 0, 0);
@@ -850,6 +810,46 @@ public sealed class MainForm : Form
         }
 
         left.Controls.Add(jackBrand, 0, 16);
+
+        // Dedicated settings page for app preferences and overlay configuration.
+        var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
+        main.Controls.Add(settingsPanel, 5, 0);
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 610), Padding = new Padding(22) };
+        RoundSurface(settingsCard, 14);
+        settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
+        settingsPanel.Controls.Add(settingsCard);
+        settingsCard.Controls.Add(new Label { Text = "APPLICATION SETTINGS", AutoSize = true, Location = new Point(22, 18), ForeColor = TextDim, Font = new Font("Segoe UI", 9F, FontStyle.Bold) });
+        var overlayPageButton = new Button { Text = "Configure mode overlay  →", Location = new Point(22, 58), Size = new Size(260, 42) };
+        StyleButton(overlayPageButton, true);
+        overlayPageButton.Click += (_, _) => ShowOverlaySettings();
+        settingsCard.Controls.Add(overlayPageButton);
+        overlayPageButton.Location = new Point(22, 54);
+        overlayPageButton.Size = new Size(260, 38);
+        ApplyRoundedButton(overlayPageButton, 10);
+
+        var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
+        foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
+        var settingsGrid = new TableLayoutPanel { Location = new Point(22, 112), Size = new Size(500, 300), ColumnCount = 2, RowCount = 3, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
+        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        for (var row = 0; row < 3; row++) settingsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        settingsCard.Controls.Add(settingsGrid);
+        var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
+        for (var i = 0; i < settingsGridItems.Length; i++)
+        {
+            settingsGridItems[i].Dock = DockStyle.Fill;
+            settingsGridItems[i].Margin = new Padding(0, 0, 14, 6);
+            settingsGrid.Controls.Add(settingsGridItems[i], i % 2, i / 2);
+        }
+        startupPanel.Parent?.Controls.Remove(startupPanel);
+        startupPanel.Location = new Point(22, 330);
+        startupPanel.Size = new Size(420, 56);
+        startupPanel.BackColor = Surface;
+        settingsCard.Controls.Add(startupPanel);
+        var settingsBrand = new PictureBox { Location = new Point(22, 438), Size = new Size(240, 120), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(34, 10, 34, 10) };
+        if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
+        settingsCard.Controls.Add(settingsBrand);
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(22, 405), ForeColor = TextDim });
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
@@ -1250,6 +1250,7 @@ public sealed class MainForm : Form
         Load += (_, _) =>
         {
             LoadPersistence();
+            if (Controls.Find("dashboardPttValue", true).FirstOrDefault() is Label dashboardPttLabel) dashboardPttLabel.Text = ptt.Text;
             LoadDevices();
             ApplyStartWithWindowsSetting();
             RegisterStartStopHotkey();
