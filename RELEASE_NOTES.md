@@ -68,3 +68,7 @@
 - Split Audio into separate microphone-input and virtual-cable-output cards, placed vertically, and removed the pointless page scrollbar.
 - Converted Settings to a single-column stack of individual setting cards.
 - Removed native list borders that were showing hover/focus outlines in Word Filter and Soundboard, and removed standard button outlines for a cleaner rounded style.
+## Dashboard, Audio, and Settings Follow-up
+- Moved the dashboard Start/Stop control to the right side of VoiceGuard Status and applied rounded corners.
+- Made the Audio input/output cards fill their available rows, with proportional vertical sizing so both cards are visible.
+- Explicitly assigned each Settings card to its own row, including startup/tray options, to prevent controls disappearing from the stack.
