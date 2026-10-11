@@ -343,7 +343,7 @@ public sealed class MainForm : Form
 
         var pageHost = new Panel
         {
-            Dock = DockStyle.Fill, AutoScroll = true, BackColor = Bg,
+            Dock = DockStyle.Fill, AutoScroll = false, BackColor = Bg,
             Padding = new Padding(0), Margin = new Padding(0)
         };
         workspace.Controls.Add(pageHost, 1, 0);
@@ -1191,7 +1191,7 @@ public sealed class MainForm : Form
         log.BackColor = Color.FromArgb(24, 24, 24);
         log.ForeColor = Color.Gainsboro;
         log.Font = new Font("Consolas", 9F);
-        logHost.Controls.Add(log);
+        logHost.Controls.Add(log);\n        ApplyDarkScrollbarTheme(log);
         showPage = pageIndex =>
         {
             selectedPage = Math.Clamp(pageIndex, 0, 5);
