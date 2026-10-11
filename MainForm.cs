@@ -1012,16 +1012,16 @@ public sealed class MainForm : Form
         inputCard.Controls.AddRange(new Control[] { inputLabel, input });
         var inputDropButton = MakeAudioDropButton(input);
         inputCard.Controls.Add(inputDropButton);
+        var inputTopMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
+        inputCard.Controls.Add(inputTopMask);
         void LayoutInputCombo()
         {
             int width = Math.Max(100, inputCard.ClientSize.Width - 42);
             input.SetBounds(18, 54, width, 32);
             inputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
             inputDropButton.BringToFront();
-            var topMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
-            topMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
-            inputCard.Controls.Add(topMask);
-            topMask.BringToFront();
+            inputTopMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
+            inputTopMask.BringToFront();
             inputDropButton.BringToFront();
         }
         inputCard.Resize += (_, _) => LayoutInputCombo();
@@ -1036,16 +1036,16 @@ public sealed class MainForm : Form
         outputCard.Controls.AddRange(new Control[] { outputLabel, output });
         var outputDropButton = MakeAudioDropButton(output);
         outputCard.Controls.Add(outputDropButton);
+        var outputTopMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
+        outputCard.Controls.Add(outputTopMask);
         void LayoutOutputCombo()
         {
             int width = Math.Max(100, outputCard.ClientSize.Width - 42);
             output.SetBounds(18, 54, width, 32);
             outputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
             outputDropButton.BringToFront();
-            var topMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
-            topMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
-            outputCard.Controls.Add(topMask);
-            topMask.BringToFront();
+            outputTopMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
+            outputTopMask.BringToFront();
             outputDropButton.BringToFront();
         }
         outputCard.Resize += (_, _) => LayoutOutputCombo();
