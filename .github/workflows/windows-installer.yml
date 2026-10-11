@@ -3,11 +3,6 @@ name: VoiceGuard Windows Installer
 on:
   workflow_dispatch:
     inputs:
-      release_version:
-        description: "Exact version to publish (for example 7.0.0)"
-        required: true
-        default: "7.0.0"
-        type: string
       draft_release:
         description: "Create the GitHub release as a draft"
         required: true
@@ -26,19 +21,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate and apply release version
+      - name: Calculate and apply next version
         shell: powershell
         run: |
-          $next = "${{ inputs.release_version }}"
-          if ($next -notmatch '^\d+\.\d+\.\d+$') { throw "Release version must be MAJOR.MINOR.PATCH, for example 7.0.0." }
+          [xml]$project = Get-Content "VoiceGuard.csproj"
+          $versionNode = $project.Project.PropertyGroup.Version | Select-Object -First 1
+          if (-not $versionNode) { throw "Could not find <Version> in VoiceGuard.csproj." }
+          $current = [version]$versionNode
+          $major = $current.Major
+          $minor = $current.Minor
+          $patch = $current.Build + 1
+          if ($patch -ge 10) { $patch = 0; $minor++ }
+          $next = "$major.$minor.$patch"
           $tag = "v$next"
           git fetch --tags
-          if (git tag --list $tag) { throw "Tag $tag already exists. Choose a new version; existing releases will not be overwritten." }
-          [xml]$project = Get-Content "VoiceGuard.csproj"
+          if (git tag --list $tag) { throw "Tag $tag already exists. Refusing to overwrite an existing release." }
+          Write-Host "Current version: $current"
+          Write-Host "Next version:    $next"
           $csproj = Get-Content "VoiceGuard.csproj" -Raw
           $csproj = $csproj -replace '<Version>[^<]+</Version>', "<Version>$next</Version>"
-          $csproj = $csproj -replace '<AssemblyVersion>[^<]+</AssemblyVersion>', "<AssemblyVersion>$next.0</AssemblyVersion>"
-          $csproj = $csproj -replace '<FileVersion>[^<]+</FileVersion>', "<FileVersion>$next.0</FileVersion>"
+          $csproj = $csproj -replace '<AssemblyVersion>[^<]+</AssemblyVersion>', "<AssemblyVersion>$major.$minor.$patch.0</AssemblyVersion>"
+          $csproj = $csproj -replace '<FileVersion>[^<]+</FileVersion>', "<FileVersion>$major.$minor.$patch.0</FileVersion>"
           Set-Content "VoiceGuard.csproj" $csproj -Encoding UTF8
           "VOICEGUARD_VERSION=$next" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
