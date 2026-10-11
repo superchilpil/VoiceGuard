@@ -852,7 +852,7 @@ public sealed class MainForm : Form
 
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 540), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false, GrowStyle = TableLayoutPanelGrowStyle.FixedSize };
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 540), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false };
         settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         for (var row = 0; row < 6; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row == 5 ? 84 : 88));
         settingsCard.Controls.Add(settingsStack);
