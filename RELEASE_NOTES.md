@@ -1,3 +1,8 @@
+## UI Redesign (Testing Branch)
+- Introduced a JTG-RGB-inspired sidebar navigation and focused content pages while retaining VoiceGuard's existing purple color palette.
+- Grouped the existing controls, blocked-word list, soundboard, and logs into navigable views without changing audio-processing behavior.
+- This redesign is being validated on the `ui/jtg-rgb-redesign` branch before it is merged or released.
+
 ## Soundboard Alias Persistence
 - Fixed soundboard aliases not being restored when VoiceGuard starts.
 - Saved aliases now load against their matching soundboard clips and remain available for speech detection.
