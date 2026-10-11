@@ -860,16 +860,21 @@ public sealed class MainForm : Form
             ApplyRoundedPanel(card, 10);
             var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
             toggle.Dock = DockStyle.None;
-            toggle.Size = new Size(26, 24);
-            toggle.SetBounds(0, 0, 26, 24);
+            toggle.AutoSize = false;
+            toggle.Text = string.Empty;
+            toggle.Appearance = Appearance.Button;
+            toggle.Size = new Size(30, 22);
+            toggle.SetBounds(0, 0, 30, 22);
             toggle.BackColor = Surface2;
             card.Controls.Add(toggle);
             card.Controls.Add(label);
             void LayoutToggle()
             {
-                label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 112), card.ClientSize.Height);
-                toggle.Size = new Size(26, 24);
-                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 82), (card.ClientSize.Height - 24) / 2, 26, 24);
+                label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 150), card.ClientSize.Height);
+                toggle.AutoSize = false;
+                toggle.Text = string.Empty;
+                toggle.Size = new Size(30, 22);
+                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 112), (card.ClientSize.Height - 22) / 2, 30, 22);
             }
             card.Resize += (_, _) => LayoutToggle();
             LayoutToggle();
@@ -1013,6 +1018,11 @@ public sealed class MainForm : Form
             input.SetBounds(18, 54, width, 32);
             inputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
             inputDropButton.BringToFront();
+            var topMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
+            topMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
+            inputCard.Controls.Add(topMask);
+            topMask.BringToFront();
+            inputDropButton.BringToFront();
         }
         inputCard.Resize += (_, _) => LayoutInputCombo();
         LayoutInputCombo();
@@ -1031,6 +1041,11 @@ public sealed class MainForm : Form
             int width = Math.Max(100, outputCard.ClientSize.Width - 42);
             output.SetBounds(18, 54, width, 32);
             outputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
+            outputDropButton.BringToFront();
+            var topMask = new Panel { BackColor = Color.FromArgb(42, 24, 61), TabStop = false };
+            topMask.SetBounds(18, 54, Math.Max(1, width - 30), 3);
+            outputCard.Controls.Add(topMask);
+            topMask.BringToFront();
             outputDropButton.BringToFront();
         }
         outputCard.Resize += (_, _) => LayoutOutputCombo();
@@ -1430,7 +1445,7 @@ public sealed class MainForm : Form
             Text = string.Empty;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             Cursor = Cursors.Hand;
-            Size = new Size(26, 24);
+            Size = new Size(30, 22);
         }
 
         protected override void OnPaint(PaintEventArgs e)
