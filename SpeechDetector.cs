@@ -518,6 +518,14 @@ public sealed class SpeechDetector : IAsyncDisposable
 
         lock (sync)
         {
+            // Defense in depth: only enqueue censorship recognition inside an
+            // active VoiceGuard PTT segment. AudioEngine already gates normal
+            // microphone capture, but this prevents accidental idle ASR if a
+            // future caller feeds this method outside the trigger window.
+            // Soundboard's explicit listen path uses AddSoundboardListenPcm instead.
+            if (!pttSegmentActive)
+                return;
+
             if (pcm48k.Count == 0 && absoluteStartSeconds.HasValue)
                 _streamOffsetSeconds = Math.Max(0, absoluteStartSeconds.Value);
 
