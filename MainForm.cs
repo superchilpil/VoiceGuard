@@ -301,32 +301,87 @@ public sealed class MainForm : Form
 
         Shown += async (_, _) => await CheckForUpdatesAsync();
 
-        // The four-section working area is confined to row 2 of root.
-        var mainHost = new Panel
-        { Dock = DockStyle.Fill, AutoScroll = true, BackColor = Bg, Padding = new Padding(0) };
-        root.Controls.Add(mainHost, 0, 1);
+        // JTG-RGB-inspired workspace: persistent sidebar and one focused page at a time.
+        var workspace = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1,
+            Padding = new Padding(0), Margin = new Padding(0), BackColor = Bg
+        };
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 224));
+        workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        workspace.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.Controls.Add(workspace, 0, 1);
+
+        var sidebar = new Panel
+        {
+            Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(14, 18, 14, 14),
+            Margin = new Padding(0)
+        };
+        workspace.Controls.Add(sidebar, 0, 0);
+        var sidebarTitle = new Label
+        {
+            Text = "WORKSPACE", AutoSize = true, Location = new Point(14, 18),
+            ForeColor = TextDim, Font = new Font("Segoe UI", 8F, FontStyle.Bold)
+        };
+        sidebar.Controls.Add(sidebarTitle);
+        var sidebarBrand = new Label
+        {
+            Text = "VoiceGuard", AutoSize = true, Location = new Point(14, 43),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 15F, FontStyle.Bold)
+        };
+        sidebar.Controls.Add(sidebarBrand);
+        var sidebarDivider = new Panel
+        {
+            BackColor = Border, Height = 1, Location = new Point(14, 78),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+        sidebar.Controls.Add(sidebarDivider);
+
+        var pageHost = new Panel
+        {
+            Dock = DockStyle.Fill, AutoScroll = true, BackColor = Bg,
+            Padding = new Padding(0), Margin = new Padding(0)
+        };
+        workspace.Controls.Add(pageHost, 1, 0);
 
         var main = new TableLayoutPanel
         {
-            Location = new Point(0, 0),
-            Width = 1680,
-            Height = 1,
-            AutoSize = false,
-            ColumnCount = 4,
-            RowCount = 1,
-            Padding = new Padding(18, 14, 18, 18),
-            Margin = new Padding(0),
-            BackColor = Bg
+            Location = new Point(0, 0), Width = 1, Height = 1, AutoSize = false,
+            ColumnCount = 4, RowCount = 1, Padding = new Padding(24, 22, 24, 22),
+            Margin = new Padding(0), BackColor = Bg
         };
-        // Four primary sections: controls, blocked words, soundboard phrases, logs.
-        // The host is horizontally scrollable whenever the window is narrower than
-        // the complete working surface. Maximized mode normally shows the full layout.
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 410));
-        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 510));
-        mainHost.Controls.Add(main);
-        mainHost.Resize += (_, _) => main.Height = Math.Max(1, mainHost.ClientSize.Height);
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        pageHost.Controls.Add(main);
+        pageHost.Resize += (_, _) =>
+        {
+            main.Width = Math.Max(1, pageHost.ClientSize.Width);
+            main.Height = Math.Max(1, pageHost.ClientSize.Height);
+        };
+        var navButtons = new List<Button>();
+        var navLabels = new[] { "Dashboard & Audio", "Word Filter", "Soundboard", "Logs" };
+        for (var i = 0; i < navLabels.Length; i++)
+        {
+            var pageIndex = i;
+            var nav = new Button
+            {
+                Text = navLabels[i], Tag = i, Location = new Point(8, 104 + i * 48),
+                Size = new Size(174, 40), TextAlign = ContentAlignment.MiddleLeft,
+                FlatStyle = FlatStyle.Flat, BackColor = Surface, ForeColor = TextDim,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular), Cursor = Cursors.Hand,
+                Padding = new Padding(10, 0, 0, 0), Margin = new Padding(0)
+            };
+            nav.FlatAppearance.BorderSize = 0;
+            nav.FlatAppearance.MouseOverBackColor = Surface2;
+            nav.Click += (_, _) => ShowPage(pageIndex);
+            sidebar.Controls.Add(nav);
+            navButtons.Add(nav);
+        }
+        var selectedPage = 0;
+        Action<int>? showPage = null;
+        void ShowPage(int pageIndex) => showPage?.Invoke(pageIndex);
 
         // LEFT: controls are explicitly arranged top-to-bottom in the
         // requested order instead of relying on DockStyle.Top z-order.
@@ -815,6 +870,31 @@ public sealed class MainForm : Form
         log.ForeColor = Color.Gainsboro;
         log.Font = new Font("Consolas", 9F);
         logHost.Controls.Add(log);
+        showPage = pageIndex =>
+        {
+            selectedPage = Math.Clamp(pageIndex, 0, 3);
+            var widths = new[] { 0, 0, 0, 0 };
+            widths[selectedPage] = 1;
+            main.SuspendLayout();
+            main.ColumnStyles.Clear();
+            for (var i = 0; i < widths.Length; i++)
+                main.ColumnStyles.Add(new ColumnStyle(i == selectedPage ? SizeType.Percent : SizeType.Absolute,
+                    i == selectedPage ? 100F : 0F));
+            main.Width = Math.Max(1, pageHost.ClientSize.Width);
+            main.Height = Math.Max(1, pageHost.ClientSize.Height);
+            main.ResumeLayout(true);
+            for (var i = 0; i < navButtons.Count; i++)
+            {
+                navButtons[i].BackColor = i == selectedPage ? Surface2 : Surface;
+                navButtons[i].ForeColor = i == selectedPage ? AccentBright : TextDim;
+                navButtons[i].Font = new Font("Segoe UI", 9.5F,
+                    i == selectedPage ? FontStyle.Bold : FontStyle.Regular);
+                navButtons[i].Invalidate();
+            }
+            Text = "VoiceGuard — " + navLabels[selectedPage];
+        };
+        ShowPage(0);
+
 
         delay.ValueChanged += (_, _) => SavePersistence();
         ptt.KeyDown += (_, _) => SavePersistence();
