@@ -35,3 +35,8 @@
 - Removed the duplicate readiness card and hid the redundant top-right readiness badge; the dashboard status now reads "READY WHEN YOU ARE" in the main status card.
 - Added rounded clipping and borders to dashboard cards while retaining the VoiceGuard purple palette.
 - Kept "Check for updates" in the top-right header.
+
+## Audio, Word Filter, and Soundboard Styling
+- Rebuilt the Audio page into separate rounded cards for device selection and volume, transmission controls, hotkeys, and preferences/status.
+- Added rounded clipping to the Word Filter and Soundboard page surfaces and their lists, keeping their existing behavior and controls.
+- Reused existing audio and key controls rather than replacing their handlers or routing logic.
