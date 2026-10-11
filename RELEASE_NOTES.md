@@ -54,3 +54,7 @@
 - Applied dark purple owner-drawn styling to the audio device dropdowns.
 - Rounded individual blocked-word and soundboard item cards, replacement/test surfaces, and their action buttons.
 - Reorganized Settings sizing and startup/tray options to reduce overlap and keep the JTG logo at the bottom.
+## Consistent Corner and Outline Pass
+- Rounded the sidebar shell and every sidebar navigation item, and repositioned the sidebar footer to remain inside the available height.
+- Standardized button outline strokes to the same VoiceGuard border color instead of accent-colored top/left and darker bottom/right effects.
+- Kept the existing VoiceGuard purple palette and avoided changes to audio processing.
