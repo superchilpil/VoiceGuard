@@ -993,7 +993,7 @@ public sealed class MainForm : Form
         words.Dock = DockStyle.Fill;
         words.Margin = new Padding(0);
         words.SelectionMode = SelectionMode.One;
-        words.BorderStyle = BorderStyle.FixedSingle;
+        words.BorderStyle = BorderStyle.None;
         words.BackColor = Surface;
         words.ForeColor = TextMain;
         words.DrawMode = DrawMode.OwnerDrawFixed;
@@ -1088,7 +1088,7 @@ public sealed class MainForm : Form
         soundboard.Dock = DockStyle.Fill;
         soundboard.Margin = new Padding(0);
         soundboard.SelectionMode = SelectionMode.One;
-        soundboard.BorderStyle = BorderStyle.FixedSingle;
+        soundboard.BorderStyle = BorderStyle.None;
         soundboard.BackColor = Surface;
         soundboard.ForeColor = TextMain;
         soundboard.DrawMode = DrawMode.OwnerDrawFixed;
@@ -1346,8 +1346,7 @@ public sealed class MainForm : Form
     private static void StyleButton(Button button, bool primary)
     {
         button.FlatStyle = FlatStyle.Flat;
-        button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = Border;
+        button.FlatAppearance.BorderSize = 0;
         button.BackColor = primary ? Color.FromArgb(72, 31, 112) : Surface2;
         button.ForeColor = TextMain;
         button.Cursor = Cursors.Hand;
