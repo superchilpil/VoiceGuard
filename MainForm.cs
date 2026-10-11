@@ -74,7 +74,7 @@ public sealed class MainForm : Form
     private WaveOutEvent? soundboardHeadsetOutput;
     private AudioFileReader? soundboardHeadsetReader;
     private readonly Button editSoundboard = new();
-    private readonly TrackBar outputVolume = new();
+    private readonly ThemedTrackBar outputVolume = new();
     private readonly Label outputVolumeValue = new();
     private bool draggingReplacementVolume;
     private int draggingReplacementIndex = -1;
@@ -614,7 +614,6 @@ public sealed class MainForm : Form
         outputVolume.Height = 28;
         outputVolume.BackColor = Surface2;
         outputVolume.ForeColor = AccentBright;
-        outputVolume.SetStyle(ControlStyles.UserPaint, true);
         outputVolume.Minimum = 0;
         outputVolume.Maximum = 150;
         outputVolume.TickFrequency = 25;
@@ -1371,6 +1370,41 @@ public sealed class MainForm : Form
         Padding = new Padding(0, 0, 0, 6),
         Margin = new Padding(0)
     };
+
+    private sealed class ThemedTrackBar : TrackBar
+    {
+        public ThemedTrackBar()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            BackColor = Surface2;
+            TickStyle = TickStyle.None;
+            AutoSize = false;
+            Height = 28;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.Clear(BackColor);
+            int pad = 8;
+            int trackY = Height / 2;
+            int left = pad + 5;
+            int right = Math.Max(left + 1, Width - pad - 5);
+            float ratio = Maximum <= Minimum ? 0f : (Value - Minimum) / (float)(Maximum - Minimum);
+            int thumbX = left + (int)Math.Round((right - left) * ratio);
+            using var trackPen = new Pen(Border, 4);
+            using var fillPen = new Pen(AccentBright, 4);
+            using var thumbBrush = new SolidBrush(AccentBright);
+            using var outlinePen = new Pen(Color.FromArgb(220, Accent), 1.5f);
+            g.DrawLine(trackPen, left, trackY, right, trackY);
+            g.DrawLine(fillPen, left, trackY, thumbX, trackY);
+            var thumb = new Rectangle(thumbX - 6, trackY - 7, 12, 14);
+            using var thumbPath = RoundedRectanglePath(thumb, 4);
+            g.FillPath(thumbBrush, thumbPath);
+            g.DrawPath(outlinePen, thumbPath);
+        }
+    }
 
     private sealed class ToggleSwitch : CheckBox
     {
