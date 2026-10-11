@@ -857,12 +857,18 @@ public sealed class MainForm : Form
             var card = new Panel { Dock = DockStyle.Fill, BackColor = Surface2, Margin = new Padding(0, 0, 0, 8), Padding = new Padding(12, 4, 12, 4) };
             ApplyRoundedPanel(card, 10);
             var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
-            toggle.Dock = DockStyle.Right;
-            toggle.Width = 42;
-            toggle.Height = 24;
+            toggle.Dock = DockStyle.None;
+            toggle.SetBounds(0, 0, 42, 24);
             toggle.BackColor = Surface2;
             card.Controls.Add(toggle);
             card.Controls.Add(label);
+            void LayoutToggle()
+            {
+                label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 90), card.ClientSize.Height);
+                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 58), (card.ClientSize.Height - 24) / 2, 42, 24);
+            }
+            card.Resize += (_, _) => LayoutToggle();
+            LayoutToggle();
             return card;
         }
 
@@ -934,7 +940,7 @@ public sealed class MainForm : Form
         left.ColumnStyles.Clear();
         left.RowStyles.Clear();
         left.ColumnCount = 1;
-        left.RowCount = 2;
+        left.RowCount = 3;
         left.Padding = new Padding(0);
         left.Margin = new Padding(0);
         left.BackColor = Bg;
@@ -983,15 +989,17 @@ public sealed class MainForm : Form
         left.BackColor = Bg;
         left.AutoScroll = false;
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 30));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 24));
         foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel }) control.Parent?.Controls.Remove(control);
         var inputCard = MakeAudioCard("Microphone input");
         inputCard.Margin = new Padding(0, 0, 0, 12);
         inputCard.Dock = DockStyle.Fill;
         left.Controls.Add(inputCard, 0, 0);
         inputLabel.Location = new Point(18, 38); inputLabel.AutoSize = true; inputLabel.Dock = DockStyle.None;
-        input.SetBounds(18, 62, 100, 30); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; ApplyRoundedComboBox(input, 8);
+        input.SetBounds(18, 54, 100, 32); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        input.BackColor = Surface2; input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(input, 8);
         inputCard.Controls.AddRange(new Control[] { inputLabel, input });
         inputCard.Resize += (_, _) => input.Width = Math.Max(100, inputCard.ClientSize.Width - 42);
         var outputCard = MakeAudioCard("Virtual cable output");
@@ -999,17 +1007,49 @@ public sealed class MainForm : Form
         outputCard.Dock = DockStyle.Fill;
         left.Controls.Add(outputCard, 0, 1);
         outputLabel.Location = new Point(18, 38); outputLabel.AutoSize = true; outputLabel.Dock = DockStyle.None;
-        output.SetBounds(18, 62, 100, 30); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; ApplyRoundedComboBox(output, 8);
-        outputVolumePanel.SetBounds(18, 106, 100, 54); outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        outputCard.Controls.AddRange(new Control[] { outputLabel, output, outputVolumePanel });
-        outputCard.Resize += (_, _) => { var w = Math.Max(100, outputCard.ClientSize.Width - 42); output.Width = w; outputVolumePanel.Width = w; };
+        output.SetBounds(18, 54, 100, 32); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        output.BackColor = Surface2; output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(output, 8);
+        outputCard.Controls.AddRange(new Control[] { outputLabel, output });
+        outputCard.Resize += (_, _) =>
+        {
+            var w = Math.Max(100, outputCard.ClientSize.Width - 42);
+            output.Width = w;
+        };
+        var volumeCard = MakeAudioCard("Headset output volume");
+        volumeCard.Margin = new Padding(0, 0, 0, 12);
+        volumeCard.Dock = DockStyle.Fill;
+        outputVolumePanel.SetBounds(18, 38, 100, 48);
+        outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        outputVolumeLabel.Location = new Point(0, 0);
+        outputVolumeLabel.Dock = DockStyle.None;
+        outputVolumeLabel.AutoSize = true;
+        outputVolumePanel.Controls.Remove(outputVolumeLabel);
+        volumeCard.Controls.Add(outputVolumeLabel);
+        volumeCard.Controls.Add(outputVolume);
+        volumeCard.Controls.Add(outputVolumeValue);
+        outputVolume.Dock = DockStyle.None;
+        outputVolume.SetBounds(0, 20, 100, 28);
+        outputVolumeValue.Dock = DockStyle.None;
+        outputVolumeValue.SetBounds(0, 20, 45, 28);
+        volumeCard.Resize += (_, _) =>
+        {
+            var w = Math.Max(100, volumeCard.ClientSize.Width - 42);
+            outputVolumePanel.Width = w;
+            outputVolume.SetBounds(0, 20, Math.Max(60, w - 52), 28);
+            outputVolumeValue.SetBounds(Math.Max(60, w - 46), 20, 45, 28);
+        };
+        volumeCard.Controls.Add(outputVolumePanel);
+        left.Controls.Add(volumeCard, 0, 2);
         left.Resize += (_, _) =>
         {
             var gap = 12;
-            var availableHeight = Math.Max(0, left.ClientSize.Height - gap);
-            var firstHeight = availableHeight / 2;
-            inputCard.SetBounds(0, 0, Math.Max(1, left.ClientSize.Width - 14), firstHeight);
-            outputCard.SetBounds(0, firstHeight + gap, Math.Max(1, left.ClientSize.Width - 14), availableHeight - firstHeight);
+            var width = Math.Max(1, left.ClientSize.Width - 14);
+            var availableHeight = Math.Max(0, left.ClientSize.Height - (gap * 2));
+            var firstHeight = (int)(availableHeight * 0.34);
+            var secondHeight = (int)(availableHeight * 0.34);
+            inputCard.SetBounds(0, 0, width, firstHeight);
+            outputCard.SetBounds(0, firstHeight + gap, width, secondHeight);
+            volumeCard.SetBounds(0, firstHeight + secondHeight + gap * 2, width, Math.Max(1, availableHeight - firstHeight - secondHeight));
         };
         left.ResumeLayout(true);
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
