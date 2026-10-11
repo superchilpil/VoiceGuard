@@ -344,10 +344,34 @@ public sealed class MainForm : Form
         };
         workspace.Controls.Add(pageHost, 1, 0);
 
+        var pageTitle = new Label
+        {
+            Text = "Dashboard & Audio", AutoSize = true, Location = new Point(24, 18),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 18F, FontStyle.Bold)
+        };
+        pageHost.Controls.Add(pageTitle);
+        var pageSubtitle = new Label
+        {
+            Text = "Manage your devices, transmission keys, and VoiceGuard runtime.",
+            AutoSize = true, Location = new Point(26, 54),
+            ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
+        };
+        pageHost.Controls.Add(pageSubtitle);
+        var statusBadge = new Label
+        {
+            Text = "●  READY WHEN YOU ARE", AutoSize = true, TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Success, BackColor = Surface, Padding = new Padding(12, 8, 12, 8),
+            Font = new Font("Segoe UI", 8F, FontStyle.Bold), Anchor = AnchorStyles.Top | AnchorStyles.Right
+        };
+        statusBadge.Location = new Point(Math.Max(24, pageHost.ClientSize.Width - 220), 24);
+        pageHost.Controls.Add(statusBadge);
+        pageHost.Resize += (_, _) =>
+            statusBadge.Location = new Point(Math.Max(24, pageHost.ClientSize.Width - statusBadge.Width - 24), 24);
+
         var main = new TableLayoutPanel
         {
-            Location = new Point(0, 0), Width = 1, Height = 1, AutoSize = false,
-            ColumnCount = 4, RowCount = 1, Padding = new Padding(24, 22, 24, 22),
+            Location = new Point(0, 88), Width = 1, Height = 1, AutoSize = false,
+            ColumnCount = 4, RowCount = 1, Padding = new Padding(24, 10, 24, 22),
             Margin = new Padding(0), BackColor = Bg
         };
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -358,7 +382,7 @@ public sealed class MainForm : Form
         pageHost.Resize += (_, _) =>
         {
             main.Width = Math.Max(1, pageHost.ClientSize.Width);
-            main.Height = Math.Max(1, pageHost.ClientSize.Height);
+            main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
         };
         var navButtons = new List<Button>();
         var navLabels = new[] { "Dashboard & Audio", "Word Filter", "Soundboard", "Logs" };
@@ -881,7 +905,7 @@ public sealed class MainForm : Form
                 main.ColumnStyles.Add(new ColumnStyle(i == selectedPage ? SizeType.Percent : SizeType.Absolute,
                     i == selectedPage ? 100F : 0F));
             main.Width = Math.Max(1, pageHost.ClientSize.Width);
-            main.Height = Math.Max(1, pageHost.ClientSize.Height);
+            main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
             main.ResumeLayout(true);
             for (var i = 0; i < navButtons.Count; i++)
             {
@@ -891,6 +915,16 @@ public sealed class MainForm : Form
                     i == selectedPage ? FontStyle.Bold : FontStyle.Regular);
                 navButtons[i].Invalidate();
             }
+            pageTitle.Text = navLabels[selectedPage];
+            pageSubtitle.Text = selectedPage switch
+            {
+                0 => "Manage audio devices, transmission keys, and VoiceGuard runtime.",
+                1 => "Configure blocked words, aliases, and replacement sounds.",
+                2 => "Manage soundboard phrases, aliases, and private playback.",
+                _ => "Review VoiceGuard runtime and speech-filter activity."
+            };
+            statusBadge.Text = engine != null ? "●  VOICEGUARD ACTIVE" : "●  READY WHEN YOU ARE";
+            statusBadge.ForeColor = engine != null ? Success : TextDim;
             Text = "VoiceGuard — " + navLabels[selectedPage];
         };
         ShowPage(0);
