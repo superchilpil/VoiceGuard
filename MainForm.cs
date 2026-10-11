@@ -1005,7 +1005,17 @@ public sealed class MainForm : Form
         input.SetBounds(18, 54, 100, 32); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         input.BackColor = Color.FromArgb(72, 31, 112); input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; input.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(input, 8);
         inputCard.Controls.AddRange(new Control[] { inputLabel, input });
-        inputCard.Resize += (_, _) => input.Width = Math.Max(100, inputCard.ClientSize.Width - 42);
+        var inputDropButton = MakeAudioDropButton(input);
+        inputCard.Controls.Add(inputDropButton);
+        void LayoutInputCombo()
+        {
+            int width = Math.Max(100, inputCard.ClientSize.Width - 42);
+            input.SetBounds(18, 54, width, 32);
+            inputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
+            inputDropButton.BringToFront();
+        }
+        inputCard.Resize += (_, _) => LayoutInputCombo();
+        LayoutInputCombo();
         var outputCard = MakeAudioCard("Virtual cable output");
         outputCard.Margin = new Padding(0, 0, 0, 12);
         outputCard.Dock = DockStyle.Fill;
@@ -1014,11 +1024,17 @@ public sealed class MainForm : Form
         output.SetBounds(18, 54, 100, 32); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         output.BackColor = Color.FromArgb(72, 31, 112); output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(output, 8);
         outputCard.Controls.AddRange(new Control[] { outputLabel, output });
-        outputCard.Resize += (_, _) =>
+        var outputDropButton = MakeAudioDropButton(output);
+        outputCard.Controls.Add(outputDropButton);
+        void LayoutOutputCombo()
         {
-            var w = Math.Max(100, outputCard.ClientSize.Width - 42);
-            output.Width = w;
-        };
+            int width = Math.Max(100, outputCard.ClientSize.Width - 42);
+            output.SetBounds(18, 54, width, 32);
+            outputDropButton.SetBounds(18 + width - 30, 54, 30, 32);
+            outputDropButton.BringToFront();
+        }
+        outputCard.Resize += (_, _) => LayoutOutputCombo();
+        LayoutOutputCombo();
         var volumeCard = MakeAudioCard("Headset output volume");
         volumeCard.Margin = new Padding(0, 0, 0, 12);
         volumeCard.Dock = DockStyle.Fill;
@@ -1483,6 +1499,27 @@ public sealed class MainForm : Form
             nud.BorderStyle = BorderStyle.None;
             ApplyRoundedControl(nud, 8);
         }
+    }
+
+    private static Button MakeAudioDropButton(ComboBox combo)
+    {
+        var button = new Button
+        {
+            Text = "⌄",
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Accent,
+            ForeColor = TextMain,
+            Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            TabStop = false
+        };
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderColor = AccentBright;
+        button.FlatAppearance.MouseOverBackColor = AccentBright;
+        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(72, 31, 112);
+        ApplyRoundedButton(button, 6);
+        button.Click += (_, _) => SendMessage(combo.Handle, 0x014F, new IntPtr(1), IntPtr.Zero);
+        return button;
     }
 
     private static void StyleComboBox(ComboBox combo)
