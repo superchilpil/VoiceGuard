@@ -269,7 +269,7 @@ public sealed class MainForm : Form
 
         header.Controls.Add(new Label
         {
-            Text = "VOICE CHAT PROFANITY FILTER  -  SOUNDBOARD",
+            Text = "Your Voice Filtered for Snowflakes",
             AutoSize = true,
             Location = new Point(70, 39),
             ForeColor = AccentBright,
