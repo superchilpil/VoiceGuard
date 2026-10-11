@@ -489,24 +489,33 @@ public sealed class MainForm : Form
         dashboard.Controls.Add(heroCard, 0, 0);
         heroCard.Controls.Add(new Label
         {
-            Text = "Your Voice Filtered for Snowflakes", AutoSize = false,
-            Location = new Point(20, 42), Size = new Size(470, 34),
-            ForeColor = TextMain, Font = new Font("Segoe UI", 16F, FontStyle.Bold)
+            Text = "Your Voice Filtered for Snowflakes", Name = "dashboardHeroTitle", AutoSize = false,
+            Location = new Point(20, 42), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            ForeColor = TextMain, Font = new Font("Segoe UI", 12F, FontStyle.Bold)
         });
         var dashboardMode = new Label
         {
             Name = "dashboardMode", Text = "●  READY WHEN YOU ARE", AutoSize = false,
-            Location = new Point(260, 88), Size = new Size(230, 24), ForeColor = Success,
+            Location = new Point(20, 84), Size = new Size(0, 24), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, ForeColor = Success,
             Font = new Font("Segoe UI", 10F, FontStyle.Bold)
         };
         heroCard.Controls.Add(dashboardMode);
         var dashboardStatus = new Label
         {
             Name = "dashboardStatus", Text = "Your audio filter is currently stopped.",
-            AutoSize = false, Location = new Point(260, 113), Size = new Size(250, 35),
+            AutoSize = false, Location = new Point(20, 108), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
         };
         heroCard.Controls.Add(dashboardStatus);
+        heroCard.Resize += (_, _) =>
+        {
+            var contentWidth = Math.Max(120, heroCard.ClientSize.Width - 40);
+            foreach (Control item in heroCard.Controls)
+            {
+                if (item is Label label && (label.Name == "dashboardMode" || label.Name == "dashboardStatus" || label.Text == "Your Voice Filtered for Snowflakes"))
+                    label.Width = contentWidth;
+            }
+        };
 
         var readyCard = MakeDashboardCard("Voice filter overview");
         dashboard.Controls.Add(readyCard, 1, 0);
@@ -572,6 +581,7 @@ public sealed class MainForm : Form
         input.Dock = DockStyle.Fill;
         input.DropDownStyle = ComboBoxStyle.DropDownList;
         StyleInput(input);
+        StyleComboBox(input);
         input.Margin = new Padding(0, 0, 0, 4);
         left.Controls.Add(input, 0, 1);
 
@@ -580,6 +590,7 @@ public sealed class MainForm : Form
         output.Dock = DockStyle.Fill;
         output.DropDownStyle = ComboBoxStyle.DropDownList;
         StyleInput(output);
+        StyleComboBox(output);
         output.Margin = new Padding(0, 0, 0, 4);
         left.Controls.Add(output, 0, 3);
 
@@ -814,7 +825,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 610), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 520), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -829,10 +840,10 @@ public sealed class MainForm : Form
 
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsGrid = new TableLayoutPanel { Location = new Point(22, 112), Size = new Size(500, 300), ColumnCount = 2, RowCount = 3, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
+        var settingsGrid = new TableLayoutPanel { Location = new Point(22, 112), Size = new Size(500, 206), ColumnCount = 2, RowCount = 3, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
         settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        for (var row = 0; row < 3; row++) settingsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
+        for (var row = 0; row < 3; row++) settingsGrid.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
         settingsCard.Controls.Add(settingsGrid);
         var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
         for (var i = 0; i < settingsGridItems.Length; i++)
@@ -842,14 +853,20 @@ public sealed class MainForm : Form
             settingsGrid.Controls.Add(settingsGridItems[i], i % 2, i / 2);
         }
         startupPanel.Parent?.Controls.Remove(startupPanel);
-        startupPanel.Location = new Point(22, 330);
-        startupPanel.Size = new Size(420, 56);
+        startupPanel.Dock = DockStyle.None;
+        startupPanel.Location = new Point(22, 334);
+        startupPanel.Size = new Size(460, 56);
         startupPanel.BackColor = Surface;
+        startupPanel.RowStyles.Clear();
+        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        startupPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        startWithWindows.BackColor = Surface;
+        minimizeToTray.BackColor = Surface;
         settingsCard.Controls.Add(startupPanel);
-        var settingsBrand = new PictureBox { Location = new Point(22, 438), Size = new Size(240, 120), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(34, 10, 34, 10) };
+        var settingsBrand = new PictureBox { Location = new Point(22, 400), Size = new Size(220, 95), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
-        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(22, 405), ForeColor = TextDim });
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 430), ForeColor = TextDim });
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
@@ -898,7 +915,13 @@ public sealed class MainForm : Form
         }
 
         var devicesCard = MakeAudioCard("Audio devices");
+        devicesCard.Margin = new Padding(0);
+        devicesCard.Dock = DockStyle.Fill;
         left.Controls.Add(devicesCard, 0, 0);
+        left.SetColumnSpan(devicesCard, 2);
+        left.RowStyles.Clear();
+        left.RowCount = 1;
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 245));
         foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel })
             left.Controls.Remove(control);
         inputLabel.Location = new Point(18, 38);
@@ -907,13 +930,13 @@ public sealed class MainForm : Form
         inputLabel.AutoSize = true;
         input.SetBounds(18, 60, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
         input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        outputLabel.Location = new Point(18, 98);
+        outputLabel.Location = new Point(18, 100);
         outputLabel.Dock = DockStyle.None;
         outputLabel.Height = 22;
         outputLabel.AutoSize = true;
-        output.SetBounds(18, 120, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
+        output.SetBounds(18, 122, Math.Max(200, devicesCard.ClientSize.Width - 42), 30);
         output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        outputVolumePanel.SetBounds(18, 158, Math.Max(200, devicesCard.ClientSize.Width - 42), 54);
+        outputVolumePanel.SetBounds(18, 164, Math.Max(200, devicesCard.ClientSize.Width - 42), 54);
         outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         devicesCard.Controls.AddRange(new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel });
         devicesCard.Resize += (_, _) =>
@@ -923,35 +946,6 @@ public sealed class MainForm : Form
             outputVolumePanel.Width = Math.Max(200, devicesCard.ClientSize.Width - 42);
         };
 
-        var transmissionCard = MakeAudioCard("Transmission control");
-        left.Controls.Add(transmissionCard, 1, 0);
-        start.Parent?.Controls.Remove(start);
-        start.SetBounds(18, 38, Math.Max(180, transmissionCard.ClientSize.Width - 42), 40);
-        start.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        transmissionCard.Controls.Add(start);
-        transmissionCard.Resize += (_, _) =>
-        {
-            start.Width = Math.Max(180, transmissionCard.ClientSize.Width - 42);
-            pttPanel.Left = Math.Max(154, transmissionCard.ClientSize.Width - pttPanel.Width - 18);
-        };
-
-        var hotkeysCard = MakeAudioCard("Hotkeys");
-        left.Controls.Add(hotkeysCard, 0, 1);
-        hotkeysCard.Controls.Add(new Label { Text = "Configure trigger, listen, and start/stop keys in Settings.", AutoSize = false, Location = new Point(18, 48), Size = new Size(230, 80), ForeColor = TextDim });
-
-        var preferencesCard = MakeAudioCard("Preferences & status");
-        left.Controls.Add(preferencesCard, 1, 1);
-        mode.Parent?.Controls.Remove(mode);
-        mode.SetBounds(18, 112, Math.Max(180, preferencesCard.ClientSize.Width - 36), 34);
-        status.Parent?.Controls.Remove(status);
-        status.SetBounds(18, 150, Math.Max(180, preferencesCard.ClientSize.Width - 36), 58);
-        preferencesCard.Controls.AddRange(new Control[] { mode, status });
-        preferencesCard.Resize += (_, _) =>
-        {
-            mode.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
-            status.Width = Math.Max(180, preferencesCard.ClientSize.Width - 36);
-        };
-        left.ResumeLayout(true);
 
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
@@ -1042,12 +1036,14 @@ public sealed class MainForm : Form
         StyleButton(addWord, false);
         addWord.Width = 105;
         addWord.Height = 30;
+        ApplyRoundedButton(addWord, 8);
         addWord.Margin = new Padding(0, 0, 7, 0);
         addWord.Click += (_, _) => AddBlockedWord();
         removeWord.Text = "Remove";
         StyleButton(removeWord, false);
         removeWord.Width = 105;
         removeWord.Height = 30;
+        ApplyRoundedButton(removeWord, 8);
         removeWord.Margin = new Padding(0);
         removeWord.Click += (_, _) => RemoveBlockedWord();
         wordButtons.Controls.Add(addWord);
@@ -1132,10 +1128,10 @@ public sealed class MainForm : Form
         sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 135));
         sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 75));
         sbButtons.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 65));
-        addSoundboard.Text = "Add phrase"; StyleButton(addSoundboard, false); addSoundboard.Margin = new Padding(0,0,6,2); addSoundboard.Click += (_,_) => AddSoundboardPhrase();
-        editSoundboard.Text = "Edit"; StyleButton(editSoundboard, false); editSoundboard.Margin = new Padding(0,0,6,2); editSoundboard.Click += (_,_) => EditSelectedSoundboard();
-        removeSoundboard.Text = "Remove"; StyleButton(removeSoundboard, false); removeSoundboard.Margin = new Padding(0,0,6,2); removeSoundboard.Click += (_,_) => RemoveSelectedSoundboard();
-        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => { if (soundboardPlaybackActive || soundboardListenInProgress) CancelSoundboardPlayback(); else BeginSoundboardListenFromKey(); };
+        addSoundboard.Text = "Add phrase"; StyleButton(addSoundboard, false); ApplyRoundedButton(addSoundboard, 8); addSoundboard.Margin = new Padding(0,0,6,2); addSoundboard.Click += (_,_) => AddSoundboardPhrase();
+        editSoundboard.Text = "Edit"; StyleButton(editSoundboard, false); ApplyRoundedButton(editSoundboard, 8); editSoundboard.Margin = new Padding(0,0,6,2); editSoundboard.Click += (_,_) => EditSelectedSoundboard();
+        removeSoundboard.Text = "Remove"; StyleButton(removeSoundboard, false); ApplyRoundedButton(removeSoundboard, 8); removeSoundboard.Margin = new Padding(0,0,6,2); removeSoundboard.Click += (_,_) => RemoveSelectedSoundboard();
+        listenSoundboard.Text = "Listen & Trigger"; StyleButton(listenSoundboard, true); ApplyRoundedButton(listenSoundboard, 8); listenSoundboard.Margin = new Padding(0,0,6,2); listenSoundboard.Click += (_,_) => { if (soundboardPlaybackActive || soundboardListenInProgress) CancelSoundboardPlayback(); else BeginSoundboardListenFromKey(); };
         sbButtons.Controls.Add(addSoundboard,0,0); sbButtons.Controls.Add(editSoundboard,1,0); sbButtons.Controls.Add(removeSoundboard,2,0); sbButtons.Controls.Add(listenSoundboard,3,0);
         soundboardBottom.Controls.Add(sbButtons,0,0);
         soundboardBottom.Controls.Add(new Label
@@ -1313,6 +1309,34 @@ public sealed class MainForm : Form
             nud.BackColor = Surface;
             nud.ForeColor = TextMain;
         }
+    }
+
+    private static void StyleComboBox(ComboBox combo)
+    {
+        combo.DrawMode = DrawMode.OwnerDrawFixed;
+        combo.ItemHeight = 24;
+        combo.BackColor = Surface;
+        combo.ForeColor = TextMain;
+        combo.FlatStyle = FlatStyle.Flat;
+        combo.DrawItem -= ThemeComboBoxDrawItem;
+        combo.DrawItem += ThemeComboBoxDrawItem;
+    }
+
+    private static void ThemeComboBoxDrawItem(object? sender, DrawItemEventArgs e)
+    {
+        if (sender is not ComboBox combo) return;
+        e.DrawBackground();
+        var selected = (e.State & DrawItemState.Selected) != 0;
+        using var background = new SolidBrush(selected ? Color.FromArgb(72, 31, 112) : Surface);
+        using var foreground = new SolidBrush(TextMain);
+        e.Graphics.FillRectangle(background, e.Bounds);
+        if (e.Index >= 0 && e.Index < combo.Items.Count)
+        {
+            var itemText = combo.GetItemText(combo.Items[e.Index]);
+            TextRenderer.DrawText(e.Graphics, itemText, combo.Font, Rectangle.Inflate(e.Bounds, -6, 0),
+                TextMain, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
+        }
+        e.DrawFocusRectangle();
     }
 
     private static void StyleButton(Button button, bool primary)
