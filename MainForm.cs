@@ -311,8 +311,9 @@ public sealed class MainForm : Form
         var sidebar = new Panel
         {
             Dock = DockStyle.Fill, BackColor = Surface, Padding = new Padding(14, 18, 14, 14),
-            Margin = new Padding(0)
+            Margin = new Padding(8)
         };
+        ApplyRoundedPanel(sidebar, 14);
         workspace.Controls.Add(sidebar, 0, 0);
         var sidebarTitle = new Label
         {
@@ -332,6 +333,13 @@ public sealed class MainForm : Form
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
         };
         sidebar.Controls.Add(sidebarDivider);
+        var sidebarFooter = new Label
+        {
+            Text = "VOICE FILTER  •  JTG", AutoSize = false, Height = 20,
+            ForeColor = TextDim, Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleCenter, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom
+        };
+        sidebar.Controls.Add(sidebarFooter);
 
         var pageHost = new Panel
         {
@@ -394,10 +402,24 @@ public sealed class MainForm : Form
             };
             nav.FlatAppearance.BorderSize = 0;
             nav.FlatAppearance.MouseOverBackColor = Surface2;
+            ApplyRoundedButton(nav, 10);
             nav.Click += (_, _) => showPage(pageIndex);
             sidebar.Controls.Add(nav);
             navButtons.Add(nav);
         }
+        void LayoutSidebar()
+        {
+            var width = Math.Max(80, sidebar.ClientSize.Width - 16);
+            for (var i = 0; i < navButtons.Count; i++)
+            {
+                navButtons[i].SetBounds(8, 104 + i * 44, width, 38);
+                ApplyRoundedButton(navButtons[i], 10);
+            }
+            sidebarFooter.SetBounds(12, Math.Max(0, sidebar.ClientSize.Height - 34), Math.Max(80, sidebar.ClientSize.Width - 24), 20);
+            sidebarDivider.Width = Math.Max(80, sidebar.ClientSize.Width - 28);
+        }
+        sidebar.Resize += (_, _) => LayoutSidebar();
+        LayoutSidebar();
         var selectedPage = 0;
 
         // LEFT: controls are explicitly arranged top-to-bottom in the
@@ -1343,7 +1365,7 @@ public sealed class MainForm : Form
     {
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = primary ? Accent : Border;
+        button.FlatAppearance.BorderColor = Border;
         button.BackColor = primary ? Color.FromArgb(72, 31, 112) : Surface2;
         button.ForeColor = TextMain;
         button.Cursor = Cursors.Hand;
@@ -3456,6 +3478,19 @@ public sealed class MainForm : Form
             MessageBox.Show($"VoiceGuard could not install the update.\r\n\r\n{ex.Message}",
                 "VoiceGuard update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static void ApplyRoundedPanel(Panel panel, int radius = 12)
+    {
+        void Apply()
+        {
+            if (panel.Width < 2 || panel.Height < 2) return;
+            using var path = RoundedRectanglePath(new Rectangle(0, 0, panel.Width - 1, panel.Height - 1), radius);
+            panel.Region?.Dispose();
+            panel.Region = new Region(path);
+        }
+        panel.Resize += (_, _) => Apply();
+        Apply();
     }
 
     private static void ApplyRoundedButton(Button button, int radius = 10)
