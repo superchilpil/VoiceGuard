@@ -86,8 +86,8 @@ public sealed class MainForm : Form
     private string overlayStyle = "Text";
     private readonly Label status = new();
     private readonly Button start = new();
-    private readonly CheckBox startWithWindows = new();
-    private readonly CheckBox minimizeToTray = new();
+    private readonly ToggleSwitch startWithWindows = new();
+    private readonly ToggleSwitch minimizeToTray = new();
     private readonly TextBox startStopHotkey = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly Button updateButton = new();
@@ -347,6 +347,7 @@ public sealed class MainForm : Form
             Padding = new Padding(0), Margin = new Padding(0)
         };
         workspace.Controls.Add(pageHost, 1, 0);
+        ApplyDarkScrollbarTheme(pageHost);
 
         var pageTitle = new Label
         {
@@ -740,8 +741,8 @@ public sealed class MainForm : Form
         hotkeyPanel.Controls.Add(hotkeyLabel);
         startStopHotkey.Dock = DockStyle.None;
         startStopHotkey.Location = new Point(0, 24);
-        startStopHotkey.Width = 140;
-        startStopHotkey.Height = 28;
+        startStopHotkey.Width = 220;
+        startStopHotkey.Height = 34;
         startStopHotkey.ReadOnly = true;
         startStopHotkey.Text = "Ctrl + Alt + V";
         startStopHotkey.Tag = Keys.Control | Keys.Alt | Keys.V;
@@ -837,7 +838,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 760), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 800), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -850,13 +851,59 @@ public sealed class MainForm : Form
         overlayPageButton.Size = new Size(260, 38);
         ApplyRoundedButton(overlayPageButton, 10);
 
+        Panel MakeSettingsToggleCard(string title, ToggleSwitch toggle)
+        {
+            var card = new Panel { Dock = DockStyle.Fill, BackColor = Surface2, Margin = new Padding(0, 0, 0, 8), Padding = new Padding(12, 4, 12, 4) };
+            ApplyRoundedPanel(card, 10);
+            var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
+            toggle.Dock = DockStyle.Right;
+            toggle.Width = 54;
+            toggle.Height = 30;
+            toggle.BackColor = Surface2;
+            card.Controls.Add(toggle);
+            card.Controls.Add(label);
+            return card;
+        }
+
+        void LayoutSettingRow(Panel panel, Label label, Control editor)
+        {
+            void ApplyLayout()
+            {
+                int h = panel.ClientSize.Height;
+                int editorWidth = editor == startStopHotkey ? Math.Min(240, Math.Max(200, panel.ClientSize.Width / 2)) : Math.Min(180, Math.Max(130, panel.ClientSize.Width / 2));
+                label.Dock = DockStyle.None;
+                label.SetBounds(12, 0, Math.Max(120, panel.ClientSize.Width - editorWidth - 36), h);
+                label.TextAlign = ContentAlignment.MiddleLeft;
+                editor.SetBounds(panel.ClientSize.Width - editorWidth - 14, Math.Max(4, (h - 34) / 2), editorWidth, 34);
+                editor.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                if (editor is Panel editorPanel)
+                {
+                    editorPanel.Padding = new Padding(1);
+                    editorPanel.BackColor = Border;
+                    foreach (Control child in editorPanel.Controls)
+                    {
+                        child.Dock = DockStyle.Fill;
+                        child.Font = new Font("Segoe UI", 10F);
+                    }
+                }
+                else editor.Font = new Font("Segoe UI", 10F);
+            }
+            panel.Resize += (_, _) => ApplyLayout();
+            ApplyLayout();
+        }
+
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 540), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false };
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 570), ColumnCount = 1, RowCount = 7, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false, GrowStyle = TableLayoutPanelGrowStyle.FixedSize };
         settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var row = 0; row < 6; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row == 5 ? 84 : 88));
+        for (var row = 0; row < 7; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row < 5 ? 88 : 58));
         settingsCard.Controls.Add(settingsStack);
         var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
+        LayoutSettingRow(delayPanel, delayLabel, delayBox);
+        LayoutSettingRow(pttPanel, pttLabel, pttBox);
+        LayoutSettingRow(voiceGuardTriggerPanel, voiceGuardTriggerLabel, voiceGuardTriggerBox);
+        LayoutSettingRow(soundboardListenKeyPanel, soundboardListenKeyLabel, soundboardKeyBox);
+        LayoutSettingRow(hotkeyPanel, hotkeyLabel, startStopHotkey);
         for (var i = 0; i < settingsGridItems.Length; i++)
         {
             var item = settingsGridItems[i];
@@ -864,16 +911,20 @@ public sealed class MainForm : Form
             ApplyRoundedPanel(item, 10); settingsStack.Controls.Add(item, 0, i);
         }
         startupPanel.Parent?.Controls.Remove(startupPanel);
-        startupPanel.Dock = DockStyle.Fill; startupPanel.Margin = new Padding(0); startupPanel.Padding = new Padding(12, 8, 12, 6); startupPanel.BackColor = Surface2;
-        ApplyRoundedPanel(startupPanel, 10); startWithWindows.BackColor = Surface2; minimizeToTray.BackColor = Surface2;
-        settingsStack.Controls.Add(startupPanel, 0, 5);
+        startWithWindows.Appearance = Appearance.Normal;
+        minimizeToTray.Appearance = Appearance.Normal;
+        var windowsToggleCard = MakeSettingsToggleCard("Start with Windows", startWithWindows);
+        var trayToggleCard = MakeSettingsToggleCard("Minimize to system tray", minimizeToTray);
+        settingsStack.Controls.Add(windowsToggleCard, 0, 5);
+        settingsStack.Controls.Add(trayToggleCard, 0, 6);
         settingsPanel.AutoScroll = true;
+        ApplyDarkScrollbarTheme(settingsPanel);
         settingsPanel.Resize += (_, _) => settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
         settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
-        var settingsBrand = new PictureBox { Location = new Point(22, 666), Size = new Size(220, 70), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
+        var settingsBrand = new PictureBox { Location = new Point(22, 708), Size = new Size(220, 70), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
-        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 690), ForeColor = TextDim });
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 732), ForeColor = TextDim });
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
@@ -931,8 +982,8 @@ public sealed class MainForm : Form
         left.BackColor = Bg;
         left.AutoScroll = false;
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
-        left.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 38));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 62));
         foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel }) control.Parent?.Controls.Remove(control);
         var inputCard = MakeAudioCard("Microphone input");
         inputCard.Margin = new Padding(0, 0, 0, 12);
@@ -1191,7 +1242,8 @@ public sealed class MainForm : Form
         log.BackColor = Color.FromArgb(24, 24, 24);
         log.ForeColor = Color.Gainsboro;
         log.Font = new Font("Consolas", 9F);
-        logHost.Controls.Add(log);\n        ApplyDarkScrollbarTheme(log);
+        logHost.Controls.Add(log);
+        ApplyDarkScrollbarTheme(log);
         showPage = pageIndex =>
         {
             selectedPage = Math.Clamp(pageIndex, 0, 5);
@@ -1270,6 +1322,33 @@ public sealed class MainForm : Form
         Padding = new Padding(0, 0, 0, 6),
         Margin = new Padding(0)
     };
+
+    private sealed class ToggleSwitch : CheckBox
+    {
+        public ToggleSwitch()
+        {
+            AutoSize = false;
+            Text = string.Empty;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            Cursor = Cursors.Hand;
+            Size = new Size(54, 30);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var track = new Rectangle(2, 5, Width - 4, Height - 10);
+            using var trackPath = RoundedRectanglePath(track, track.Height / 2);
+            using var trackBrush = new SolidBrush(Checked ? Accent : Border);
+            e.Graphics.FillPath(trackBrush, trackPath);
+            int diameter = Math.Max(12, track.Height - 4);
+            int x = Checked ? track.Right - diameter - 2 : track.Left + 2;
+            var knob = new Rectangle(x, track.Top + 2, diameter, diameter);
+            using var knobBrush = new SolidBrush(TextMain);
+            e.Graphics.FillEllipse(knobBrush, knob);
+        }
+    }
 
     private static Label MakeFieldLabel(string text) => new()
     {
