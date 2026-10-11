@@ -3482,7 +3482,7 @@ public sealed class MainForm : Form
         combo.Invalidate();
     }
 
-    private static void ApplyRoundedPanel(Panel panel, int radius = 12)
+    private static void ApplyRoundedPanel(Control panel, int radius = 12)
     {
         void Apply()
         {
