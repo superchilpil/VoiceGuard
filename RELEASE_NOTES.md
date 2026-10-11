@@ -1,3 +1,8 @@
+## Standby Recognition Gating
+- Added a defensive gate so profanity-recognition windows are only queued during an active VoiceGuard PTT segment.
+- Normal live microphone passthrough remains active in standby; the dedicated soundboard-listen path remains separate.
+- Whisper stays loaded and ready to avoid model-load delay when the trigger is pressed; idle inference is not performed.
+
 ## Reduced CPU Contention
 - Limited Whisper to four CPU threads so speech recognition is less likely to monopolize the processor during gaming.
 - Intel NPU acceleration remains enabled where supported; CPU work is still required for parts of recognition.
