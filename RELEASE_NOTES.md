@@ -40,3 +40,10 @@
 - Rebuilt the Audio page into separate rounded cards for device selection and volume, transmission controls, hotkeys, and preferences/status.
 - Added rounded clipping to the Word Filter and Soundboard page surfaces and their lists, keeping their existing behavior and controls.
 - Reused existing audio and key controls rather than replacing their handlers or routing logic.
+
+## Settings Consolidation and Compact Layout
+- Reduced the default/minimum window width by another 25%, to 825 px.
+- Moved delay, PTT key, VoiceGuard trigger key, soundboard listen key, start/stop hotkey, Windows startup, and minimize-to-tray controls into Settings.
+- Added the Jack The Gooner logo to the bottom area of Settings.
+- Removed the Overlay settings button from the top-right header; overlay configuration is now accessed from Settings.
+- Rounded the Check for updates button and corrected the dashboard PTT value to initialize from the configured key and refresh after settings load.
