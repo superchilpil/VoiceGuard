@@ -58,3 +58,8 @@
 - Rounded the sidebar shell and every sidebar navigation item, and repositioned the sidebar footer to remain inside the available height.
 - Standardized button outline strokes to the same VoiceGuard border color instead of accent-colored top/left and darker bottom/right effects.
 - Kept the existing VoiceGuard purple palette and avoided changes to audio processing.
+## UI Rendering Fixes
+- Adjusted dashboard card outline drawing and headline sizing to avoid clipped text and partially rendered borders.
+- Removed selected-item blue/purple fill and focus highlighting from Word Filter and Soundboard rows.
+- Reduced Audio device selector minimum widths and applied rounded clipping to dropdown controls.
+- Applied rounded clipping to Settings text/numeric fields and removed their native inset borders.
