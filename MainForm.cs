@@ -860,16 +860,16 @@ public sealed class MainForm : Form
             ApplyRoundedPanel(card, 10);
             var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
             toggle.Dock = DockStyle.None;
-            toggle.Size = new Size(21, 24);
-            toggle.SetBounds(0, 0, 21, 24);
+            toggle.Size = new Size(26, 24);
+            toggle.SetBounds(0, 0, 26, 24);
             toggle.BackColor = Surface2;
             card.Controls.Add(toggle);
             card.Controls.Add(label);
             void LayoutToggle()
             {
-                label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 90), card.ClientSize.Height);
-                toggle.Size = new Size(21, 24);
-                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 50), (card.ClientSize.Height - 24) / 2, 21, 24);
+                label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 112), card.ClientSize.Height);
+                toggle.Size = new Size(26, 24);
+                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 82), (card.ClientSize.Height - 24) / 2, 26, 24);
             }
             card.Resize += (_, _) => LayoutToggle();
             LayoutToggle();
@@ -1003,7 +1003,7 @@ public sealed class MainForm : Form
         left.Controls.Add(inputCard, 0, 0);
         inputLabel.Location = new Point(18, 38); inputLabel.AutoSize = true; inputLabel.Dock = DockStyle.None;
         input.SetBounds(18, 54, 100, 32); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        input.BackColor = Color.FromArgb(72, 31, 112); input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; input.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(input, 8);
+        input.BackColor = Color.FromArgb(42, 24, 61); input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; input.DrawMode = DrawMode.OwnerDrawFixed; input.ItemHeight = 24; ApplyRoundedComboBox(input, 10);
         inputCard.Controls.AddRange(new Control[] { inputLabel, input });
         var inputDropButton = MakeAudioDropButton(input);
         inputCard.Controls.Add(inputDropButton);
@@ -1022,7 +1022,7 @@ public sealed class MainForm : Form
         left.Controls.Add(outputCard, 0, 1);
         outputLabel.Location = new Point(18, 38); outputLabel.AutoSize = true; outputLabel.Dock = DockStyle.None;
         output.SetBounds(18, 54, 100, 32); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        output.BackColor = Color.FromArgb(72, 31, 112); output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(output, 8);
+        output.BackColor = Color.FromArgb(42, 24, 61); output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; output.DrawMode = DrawMode.OwnerDrawFixed; output.ItemHeight = 24; ApplyRoundedComboBox(output, 10);
         outputCard.Controls.AddRange(new Control[] { outputLabel, output });
         var outputDropButton = MakeAudioDropButton(output);
         outputCard.Controls.Add(outputDropButton);
@@ -1430,7 +1430,7 @@ public sealed class MainForm : Form
             Text = string.Empty;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
             Cursor = Cursors.Hand;
-            Size = new Size(42, 24);
+            Size = new Size(26, 24);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -1513,11 +1513,11 @@ public sealed class MainForm : Form
             Cursor = Cursors.Hand,
             TabStop = false
         };
-        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderSize = 0;
         button.FlatAppearance.BorderColor = AccentBright;
         button.FlatAppearance.MouseOverBackColor = AccentBright;
         button.FlatAppearance.MouseDownBackColor = Color.FromArgb(72, 31, 112);
-        ApplyRoundedButton(button, 6);
+        ApplyRoundedButton(button, 10);
         button.Click += (_, _) => SendMessage(combo.Handle, 0x014F, new IntPtr(1), IntPtr.Zero);
         return button;
     }
