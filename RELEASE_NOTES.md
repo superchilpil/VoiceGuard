@@ -1,3 +1,9 @@
+## UI Layout Corrections (Testing Branch)
+- Increased the dashboard status card height and repositioned Start/Stop inside its bounds, aligned to the right of the status copy.
+- Changed the Audio page to a single full-width column so the microphone and virtual-cable output cards and dropdowns are not squeezed into a partial-width column; the output volume control remains included.
+- Increased Settings card and row sizing so delay, PTT, trigger/listen keys, start/stop hotkey, and startup/tray controls have dedicated visible cards.
+- Audio engine and PTT passthrough behavior are unchanged. These are layout corrections on `ui/jtg-rgb-redesign` and require visual verification in the Windows build.
+
 ## UI Redesign (Testing Branch)
 - Introduced a JTG-RGB-inspired sidebar navigation and focused content pages while retaining VoiceGuard's existing purple color palette.
 - Grouped the existing controls, blocked-word list, soundboard, and logs into navigable views without changing audio-processing behavior.
