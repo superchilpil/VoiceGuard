@@ -505,6 +505,7 @@ public sealed class MainForm : Form
 
         var heroCard = MakeDashboardCard("VoiceGuard status");
         dashboard.Controls.Add(heroCard, 0, 0);
+        dashboard.SetColumnSpan(heroCard, 2);
         heroCard.Controls.Add(new Label
         {
             Text = "Your Voice Filtered for Snowflakes", Name = "dashboardHeroTitle", AutoSize = false,
@@ -534,20 +535,6 @@ public sealed class MainForm : Form
                     label.Width = contentWidth;
             }
         };
-
-        var readyCard = MakeDashboardCard("Voice filter overview");
-        dashboard.Controls.Add(readyCard, 1, 0);
-        readyCard.Controls.Add(new Label
-        {
-            Text = "PTT PASSTHROUGH", AutoSize = true, Location = new Point(20, 54),
-            ForeColor = AccentBright, Font = new Font("Segoe UI", 12F, FontStyle.Bold)
-        });
-        readyCard.Controls.Add(new Label
-        {
-            Text = "Your push-to-talk key is passed through while VoiceGuard filters speech.",
-            AutoSize = false, Location = new Point(20, 82), Size = new Size(270, 55),
-            ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
-        });
 
         var pttCard = MakeDashboardCard("Push-to-talk key");
         dashboard.Controls.Add(pttCard, 0, 1);
