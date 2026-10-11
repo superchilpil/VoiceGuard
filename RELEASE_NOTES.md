@@ -28,3 +28,10 @@
 - Added a separate Audio navigation page and kept Word Filter, Soundboard, and Logs as focused pages.
 - Kept the existing audio engine and PTT passthrough logic unchanged.
 - The redesign remains under validation on `ui/jtg-rgb-redesign`; it is not a stable release.
+
+## UI Feedback Pass
+- Reduced the window's default and minimum dimensions to make the workspace more compact.
+- Added icon-like glyphs to the sidebar navigation and a dedicated Settings page with overlay configuration.
+- Removed the duplicate readiness card and hid the redundant top-right readiness badge; the dashboard status now reads "READY WHEN YOU ARE" in the main status card.
+- Added rounded clipping and borders to dashboard cards while retaining the VoiceGuard purple palette.
+- Kept "Check for updates" in the top-right header.
