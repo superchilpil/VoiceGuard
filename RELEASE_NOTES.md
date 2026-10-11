@@ -47,3 +47,10 @@
 - Added the Jack The Gooner logo to the bottom area of Settings.
 - Removed the Overlay settings button from the top-right header; overlay configuration is now accessed from Settings.
 - Rounded the Check for updates button and corrected the dashboard PTT value to initialize from the configured key and refresh after settings load.
+
+## UI Cleanup Pass
+- Reworked the dashboard status card to use responsive widths and smaller title typography so its headline/status no longer run outside the card at the compact window width.
+- Simplified Audio to only microphone input, virtual-cable output, and output volume; transmission and hotkey controls remain in Settings.
+- Applied dark purple owner-drawn styling to the audio device dropdowns.
+- Rounded individual blocked-word and soundboard item cards, replacement/test surfaces, and their action buttons.
+- Reorganized Settings sizing and startup/tray options to reduce overlap and keep the JTG logo at the bottom.
