@@ -612,6 +612,8 @@ public sealed class MainForm : Form
         outputVolumePanel.Controls.Add(outputVolumeLabel);
         outputVolume.Dock = DockStyle.Bottom;
         outputVolume.Height = 28;
+        outputVolume.BackColor = Surface2;
+        outputVolume.ForeColor = AccentBright;
         outputVolume.Minimum = 0;
         outputVolume.Maximum = 150;
         outputVolume.TickFrequency = 25;
@@ -858,14 +860,14 @@ public sealed class MainForm : Form
             ApplyRoundedPanel(card, 10);
             var label = new Label { Text = title, Dock = DockStyle.Left, Width = 270, ForeColor = TextMain, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI", 9.5F) };
             toggle.Dock = DockStyle.None;
-            toggle.SetBounds(0, 0, 42, 24);
+            toggle.SetBounds(0, 0, 21, 24);
             toggle.BackColor = Surface2;
             card.Controls.Add(toggle);
             card.Controls.Add(label);
             void LayoutToggle()
             {
                 label.SetBounds(12, 0, Math.Max(100, card.ClientSize.Width - 90), card.ClientSize.Height);
-                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 58), (card.ClientSize.Height - 24) / 2, 42, 24);
+                toggle.SetBounds(Math.Max(12, card.ClientSize.Width - 44), (card.ClientSize.Height - 24) / 2, 21, 24);
             }
             card.Resize += (_, _) => LayoutToggle();
             LayoutToggle();
@@ -999,7 +1001,7 @@ public sealed class MainForm : Form
         left.Controls.Add(inputCard, 0, 0);
         inputLabel.Location = new Point(18, 38); inputLabel.AutoSize = true; inputLabel.Dock = DockStyle.None;
         input.SetBounds(18, 54, 100, 32); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        input.BackColor = Surface2; input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(input, 8);
+        input.BackColor = Color.FromArgb(72, 31, 112); input.ForeColor = TextMain; input.FlatStyle = FlatStyle.Flat; input.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(input, 8);
         inputCard.Controls.AddRange(new Control[] { inputLabel, input });
         inputCard.Resize += (_, _) => input.Width = Math.Max(100, inputCard.ClientSize.Width - 42);
         var outputCard = MakeAudioCard("Virtual cable output");
@@ -1008,7 +1010,7 @@ public sealed class MainForm : Form
         left.Controls.Add(outputCard, 0, 1);
         outputLabel.Location = new Point(18, 38); outputLabel.AutoSize = true; outputLabel.Dock = DockStyle.None;
         output.SetBounds(18, 54, 100, 32); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        output.BackColor = Surface2; output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(output, 8);
+        output.BackColor = Color.FromArgb(72, 31, 112); output.ForeColor = TextMain; output.FlatStyle = FlatStyle.Flat; ApplyRoundedComboBox(output, 8);
         outputCard.Controls.AddRange(new Control[] { outputLabel, output });
         outputCard.Resize += (_, _) =>
         {
@@ -3610,6 +3612,8 @@ public sealed class MainForm : Form
 
     private static void ApplyRoundedComboBox(ComboBox combo, int radius = 8)
     {
+        combo.BackColor = Color.FromArgb(72, 31, 112);
+        combo.ForeColor = TextMain;
         ApplyRoundedControl(combo, radius);
         combo.Invalidate();
     }
