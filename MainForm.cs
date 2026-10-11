@@ -531,9 +531,11 @@ public sealed class MainForm : Form
             var contentWidth = Math.Max(120, heroCard.ClientSize.Width - 40);
             foreach (Control item in heroCard.Controls)
                 if (item is Label label) label.Width = contentWidth;
-            start.SetBounds(20, 146, Math.Min(220, contentWidth), 40);
+            start.SetBounds(Math.Max(20, contentWidth - 240), 146, Math.Min(220, contentWidth), 40);
         };
-        start.SetBounds(20, 146, 220, 40);
+        start.SetBounds(240, 146, 220, 40);
+        start.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        ApplyRoundedButton(start, 10);
 
         var pttCard = MakeDashboardCard("Push-to-talk key");
         dashboard.Controls.Add(pttCard, 0, 1);
@@ -844,21 +846,21 @@ public sealed class MainForm : Form
 
         var settingsControls = new[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel, startupPanel };
         foreach (var settingControl in settingsControls) settingControl.Parent?.Controls.Remove(settingControl);
-        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 370), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0) };
+        var settingsStack = new TableLayoutPanel { Location = new Point(22, 108), Size = new Size(490, 410), ColumnCount = 1, RowCount = 6, BackColor = Surface, Margin = new Padding(0), Padding = new Padding(0), AutoSize = false };
         settingsStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var row = 0; row < 5; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-        settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
+        for (var row = 0; row < 6; row++) settingsStack.RowStyles.Add(new RowStyle(SizeType.Absolute, row == 5 ? 76 : 66));
         settingsCard.Controls.Add(settingsStack);
         var settingsGridItems = new Control[] { delayPanel, pttPanel, voiceGuardTriggerPanel, soundboardListenKeyPanel, hotkeyPanel };
-        foreach (var item in settingsGridItems)
+        for (var i = 0; i < settingsGridItems.Length; i++)
         {
+            var item = settingsGridItems[i];
             item.Dock = DockStyle.Fill; item.Margin = new Padding(0, 0, 0, 8); item.Padding = new Padding(12, 8, 12, 6); item.BackColor = Surface2;
-            ApplyRoundedPanel(item, 10); settingsStack.Controls.Add(item);
+            ApplyRoundedPanel(item, 10); settingsStack.Controls.Add(item, 0, i);
         }
         startupPanel.Parent?.Controls.Remove(startupPanel);
         startupPanel.Dock = DockStyle.Fill; startupPanel.Margin = new Padding(0); startupPanel.Padding = new Padding(12, 8, 12, 6); startupPanel.BackColor = Surface2;
         ApplyRoundedPanel(startupPanel, 10); startWithWindows.BackColor = Surface2; minimizeToTray.BackColor = Surface2;
-        settingsStack.Controls.Add(startupPanel);
+        settingsStack.Controls.Add(startupPanel, 0, 5);
         settingsPanel.AutoScroll = true;
         settingsPanel.Resize += (_, _) => settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
         settingsStack.Width = Math.Max(280, settingsPanel.ClientSize.Width - 50);
@@ -924,11 +926,12 @@ public sealed class MainForm : Form
         left.BackColor = Bg;
         left.AutoScroll = false;
         left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        left.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
         foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel }) control.Parent?.Controls.Remove(control);
         var inputCard = MakeAudioCard("Microphone input");
         inputCard.Margin = new Padding(0, 0, 0, 12);
+        inputCard.Dock = DockStyle.Fill;
         left.Controls.Add(inputCard, 0, 0);
         inputLabel.Location = new Point(18, 38); inputLabel.AutoSize = true; inputLabel.Dock = DockStyle.None;
         input.SetBounds(18, 62, 100, 30); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; ApplyRoundedComboBox(input, 8);
@@ -936,6 +939,7 @@ public sealed class MainForm : Form
         inputCard.Resize += (_, _) => input.Width = Math.Max(100, inputCard.ClientSize.Width - 42);
         var outputCard = MakeAudioCard("Virtual cable output");
         outputCard.Margin = new Padding(0, 0, 0, 12);
+        outputCard.Dock = DockStyle.Fill;
         left.Controls.Add(outputCard, 0, 1);
         outputLabel.Location = new Point(18, 38); outputLabel.AutoSize = true; outputLabel.Dock = DockStyle.None;
         output.SetBounds(18, 62, 100, 30); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; ApplyRoundedComboBox(output, 8);
