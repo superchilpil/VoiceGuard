@@ -918,42 +918,36 @@ public sealed class MainForm : Form
             return card;
         }
 
-        var devicesCard = MakeAudioCard("Audio devices");
-        devicesCard.Margin = new Padding(0);
-        devicesCard.Dock = DockStyle.Fill;
-        left.Controls.Add(devicesCard, 0, 0);
-        left.SetColumnSpan(devicesCard, 2);
+        left.SuspendLayout();
+        left.Controls.Clear();
+        left.ColumnStyles.Clear();
         left.RowStyles.Clear();
-        left.RowCount = 1;
-        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 245));
-        foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel })
-            left.Controls.Remove(control);
-        inputLabel.Location = new Point(18, 38);
-        inputLabel.Dock = DockStyle.None;
-        inputLabel.Height = 22;
-        inputLabel.AutoSize = true;
-        input.SetBounds(18, 60, Math.Max(100, devicesCard.ClientSize.Width - 42), 30);
-        input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        ApplyRoundedComboBox(input, 8);
-        outputLabel.Location = new Point(18, 100);
-        outputLabel.Dock = DockStyle.None;
-        outputLabel.Height = 22;
-        outputLabel.AutoSize = true;
-        output.SetBounds(18, 122, Math.Max(100, devicesCard.ClientSize.Width - 42), 30);
-        output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        ApplyRoundedComboBox(output, 8);
-        outputVolumePanel.SetBounds(18, 164, Math.Max(200, devicesCard.ClientSize.Width - 42), 54);
-        outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        devicesCard.Controls.AddRange(new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel });
-        devicesCard.Resize += (_, _) =>
-        {
-            var controlWidth = Math.Max(100, devicesCard.ClientSize.Width - 42);
-            input.Width = controlWidth;
-            output.Width = controlWidth;
-            outputVolumePanel.Width = controlWidth;
-        };
-
-
+        left.ColumnCount = 1;
+        left.RowCount = 2;
+        left.Padding = new Padding(0);
+        left.Margin = new Padding(0);
+        left.BackColor = Bg;
+        left.AutoScroll = false;
+        left.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        left.RowStyles.Add(new RowStyle(SizeType.Absolute, 210));
+        foreach (var control in new Control[] { inputLabel, input, outputLabel, output, outputVolumePanel }) control.Parent?.Controls.Remove(control);
+        var inputCard = MakeAudioCard("Microphone input");
+        inputCard.Margin = new Padding(0, 0, 0, 12);
+        left.Controls.Add(inputCard, 0, 0);
+        inputLabel.Location = new Point(18, 38); inputLabel.AutoSize = true; inputLabel.Dock = DockStyle.None;
+        input.SetBounds(18, 62, 100, 30); input.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; ApplyRoundedComboBox(input, 8);
+        inputCard.Controls.AddRange(new Control[] { inputLabel, input });
+        inputCard.Resize += (_, _) => input.Width = Math.Max(100, inputCard.ClientSize.Width - 42);
+        var outputCard = MakeAudioCard("Virtual cable output");
+        outputCard.Margin = new Padding(0, 0, 0, 12);
+        left.Controls.Add(outputCard, 0, 1);
+        outputLabel.Location = new Point(18, 38); outputLabel.AutoSize = true; outputLabel.Dock = DockStyle.None;
+        output.SetBounds(18, 62, 100, 30); output.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right; ApplyRoundedComboBox(output, 8);
+        outputVolumePanel.SetBounds(18, 106, 100, 54); outputVolumePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+        outputCard.Controls.AddRange(new Control[] { outputLabel, output, outputVolumePanel });
+        outputCard.Resize += (_, _) => { var w = Math.Max(100, outputCard.ClientSize.Width - 42); output.Width = w; outputVolumePanel.Width = w; };
+        left.ResumeLayout(true);
         // MIDDLE: a dedicated three-row layout makes the ListBox bounds
         // unambiguous: title, list (fills), controls/help.
         var wordPanel = new TableLayoutPanel
