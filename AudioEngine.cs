@@ -524,8 +524,11 @@ public sealed class AudioEngine : IDisposable
             {
                 short sample = (short)(buffer[i] | (buffer[i + 1] << 8));
                 double normalized = sample / 32768.0;
-                double processed = volume <= 1.0 ? normalized * volume : Math.Tanh(normalized * volume) / Math.Tanh(volume);
-                int scaled = (int)Math.Round(Math.Clamp(processed, -1.0, 1.0) * 32767.0);
+                // This control is an output-volume multiplier, not a compressor.
+                // Below 100% it attenuates linearly; above 100% it amplifies and
+                // clips only when the output exceeds the representable PCM range.
+                double processed = Math.Clamp(normalized * volume, -1.0, 1.0);
+                int scaled = (int)Math.Round(processed * 32767.0);
                 buffer[i] = (byte)(scaled & 0xFF);
                 buffer[i + 1] = (byte)((scaled >> 8) & 0xFF);
             }
@@ -697,8 +700,10 @@ public sealed class AudioEngine : IDisposable
                     {
                         short sample = (short)(buffer[i] | (buffer[i + 1] << 8));
                         double normalized = sample / 32768.0;
-                        double processed = volume <= 1.0 ? normalized * volume : Math.Tanh(normalized * volume) / Math.Tanh(volume);
-                        int scaled = (int)Math.Round(Math.Clamp(processed, -1.0, 1.0) * 32767.0);
+                        // Per-replacement and per-soundboard sliders use the same
+                        // linear volume behavior as the master output slider.
+                        double processed = Math.Clamp(normalized * volume, -1.0, 1.0);
+                        int scaled = (int)Math.Round(processed * 32767.0);
                         buffer[i] = (byte)(scaled & 0xFF);
                         buffer[i + 1] = (byte)((scaled >> 8) & 0xFF);
                     }
