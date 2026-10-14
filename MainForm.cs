@@ -2951,14 +2951,11 @@ public sealed class MainForm : Form
         {
             int read = source.Read(buffer, offset, count);
             if (Math.Abs(gain - 1f) < 0.0001f) return read;
-            if (gain <= 1f)
-            {
-                for (int i = offset; i < offset + read; i++) buffer[i] *= gain;
-                return read;
-            }
-            double denominator = Math.Tanh(gain);
+            // Use a straightforward volume multiplier. Values above 100%
+            // amplify the signal and clamp at full scale instead of normalizing
+            // it through a soft limiter that can make slider changes hard to hear.
             for (int i = offset; i < offset + read; i++)
-                buffer[i] = (float)(Math.Tanh(buffer[i] * gain) / denominator);
+                buffer[i] = (float)Math.Clamp(buffer[i] * gain, -1.0f, 1.0f);
             return read;
         }
     }
