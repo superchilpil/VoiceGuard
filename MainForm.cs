@@ -2820,7 +2820,7 @@ public sealed class MainForm : Form
     private async void TestSoundboardSound(string phrase)
     {
         var path=GetSoundboardSound(phrase); if(string.IsNullOrWhiteSpace(path)||!File.Exists(path)){MessageBox.Show(this,"No soundboard clip is assigned.","VoiceGuard");return;}
-        try { SetStatus("Testing soundboard clip..."); double volume=Math.Clamp(GetSoundboardVolume(phrase)*(outputVolume.Value/100.0),0,1.5); await Task.Run(()=>PlayReplacementOnDefaultDevice(path,volume)); SetStatus("Soundboard test complete."); } catch(Exception ex){AddLog($"SOUNDBOARD TEST ERROR — {Path.GetFileName(path)} — {ex.Message}");}
+        try { SetStatus("Testing soundboard clip..."); double itemVolume = GetSoundboardVolume(phrase); double masterVolume = outputVolume.Value / 100.0; await Task.Run(() => PlayReplacementOnDefaultDevice(path, itemVolume, masterVolume)); SetStatus("Soundboard test complete."); } catch(Exception ex){AddLog($"SOUNDBOARD TEST ERROR — {Path.GetFileName(path)} — {ex.Message}");}
     }
 
     private void AddBlockedWord()
@@ -2928,8 +2928,9 @@ public sealed class MainForm : Form
         }
         try
         {
-            double volume = Math.Clamp(GetReplacementVolume(word) * (outputVolume.Value / 100.0), 0.0, 1.5);
-            await Task.Run(() => PlayReplacementOnDefaultDevice(path, volume));
+            double itemVolume = GetReplacementVolume(word);
+            double masterVolume = outputVolume.Value / 100.0;
+            await Task.Run(() => PlayReplacementOnDefaultDevice(path, itemVolume, masterVolume));
         }
         catch (Exception ex)
         {
@@ -2960,12 +2961,17 @@ public sealed class MainForm : Form
         }
     }
 
-    private static void PlayReplacementOnDefaultDevice(string path, double volume)
+    private static void PlayReplacementOnDefaultDevice(string path, double itemVolume, double masterVolume)
     {
         using var reader = new AudioFileReader(path);
-        var volumeProvider = new GainSampleProvider(reader, Math.Clamp(volume, 0.0, 1.5));
+        // Mirror the outgoing VoiceGuard path: apply the item slider first,
+        // then the master slider as a separate stage. Do not combine the gains
+        // into one clamped value, because 150% item + 150% master must behave
+        // like the live output path, including its clipping characteristics.
+        ISampleProvider itemLevel = new GainSampleProvider(reader, Math.Clamp(itemVolume, 0.0, 1.5));
+        ISampleProvider masterLevel = new GainSampleProvider(itemLevel, Math.Clamp(masterVolume, 0.0, 1.5));
         using var player = new WaveOutEvent { DeviceNumber = -1, DesiredLatency = 80, NumberOfBuffers = 3 };
-        player.Init(volumeProvider);
+        player.Init(masterLevel);
         player.Play();
         while (player.PlaybackState == PlaybackState.Playing)
             System.Threading.Thread.Sleep(20);
