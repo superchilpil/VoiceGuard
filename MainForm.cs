@@ -76,6 +76,7 @@ public sealed class MainForm : Form
     private readonly Button editSoundboard = new();
     private readonly ThemedTrackBar outputVolume = new();
     private readonly Label outputVolumeValue = new();
+    private bool outputVolumeDragging;
     private bool draggingReplacementVolume;
     private int draggingReplacementIndex = -1;
     private readonly TextBox log = new();
@@ -629,11 +630,21 @@ public sealed class MainForm : Form
         outputVolumeValue.ForeColor = TextDim;
         outputVolumeValue.Dock = DockStyle.Right;
         outputVolumePanel.Controls.Add(outputVolumeValue);
+        // Keep the slider responsive while dragging. Persisting the entire
+        // configuration on every ValueChanged event performs synchronous disk
+        // I/O and can leave painted slider positions behind the thumb.
+        outputVolume.MouseDown += (_, _) => outputVolumeDragging = true;
+        outputVolume.MouseUp += (_, _) =>
+        {
+            outputVolumeDragging = false;
+            SavePersistence();
+        };
+        outputVolume.KeyUp += (_, _) => SavePersistence();
         outputVolume.ValueChanged += (_, _) =>
         {
             outputVolumeValue.Text = $"{outputVolume.Value}%";
             engine?.SetOutputVolume(outputVolume.Value / 100.0);
-            if (!loadingPersistence) SavePersistence();
+            if (!loadingPersistence && !outputVolumeDragging) SavePersistence();
         };
         left.Controls.Add(outputVolumePanel, 0, 4);
 
