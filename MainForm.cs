@@ -74,8 +74,14 @@ public sealed class MainForm : Form
     private WaveOutEvent? soundboardHeadsetOutput;
     private AudioFileReader? soundboardHeadsetReader;
     private readonly Button editSoundboard = new();
+    // All UI test clips share one playback lane. A new request cancels the current clip
+    // and any older queued test so test audio never overlaps.
+    private readonly SemaphoreSlim testPlaybackSemaphore = new(1, 1);
+    private readonly object testPlaybackSync = new();
+    private CancellationTokenSource? testPlaybackRequestCts;
     private readonly ThemedTrackBar outputVolume = new();
     private readonly Label outputVolumeValue = new();
+    private bool outputVolumeDragging;
     private bool draggingReplacementVolume;
     private int draggingReplacementIndex = -1;
     private readonly TextBox log = new();
@@ -90,7 +96,7 @@ public sealed class MainForm : Form
     private readonly ToggleSwitch minimizeToTray = new();
     private readonly TextBox startStopHotkey = new();
     private readonly NotifyIcon trayIcon = new();
-    private readonly HeaderActionButton updateButton = new();
+    private readonly Button updateButton = new();
     private static readonly HttpClient UpdateHttpClient = CreateUpdateHttpClient();
     private const string GitHubLatestReleaseUrl = "https://api.github.com/repos/superchilpil/VoiceGuard/releases/latest";
     private string? availableUpdateVersion;
@@ -629,11 +635,21 @@ public sealed class MainForm : Form
         outputVolumeValue.ForeColor = TextDim;
         outputVolumeValue.Dock = DockStyle.Right;
         outputVolumePanel.Controls.Add(outputVolumeValue);
+        // Keep the slider responsive while dragging. Persisting the entire
+        // configuration on every ValueChanged event performs synchronous disk
+        // I/O and can leave painted slider positions behind the thumb.
+        outputVolume.MouseDown += (_, _) => outputVolumeDragging = true;
+        outputVolume.MouseUp += (_, _) =>
+        {
+            outputVolumeDragging = false;
+            SavePersistence();
+        };
+        outputVolume.KeyUp += (_, _) => SavePersistence();
         outputVolume.ValueChanged += (_, _) =>
         {
             outputVolumeValue.Text = $"{outputVolume.Value}%";
             engine?.SetOutputVolume(outputVolume.Value / 100.0);
-            if (!loadingPersistence) SavePersistence();
+            if (!loadingPersistence && !outputVolumeDragging) SavePersistence();
         };
         left.Controls.Add(outputVolumePanel, 0, 4);
 
@@ -1435,11 +1451,6 @@ public sealed class MainForm : Form
             g.FillPath(thumbBrush, thumbPath);
             g.DrawPath(outlinePen, thumbPath);
         }
-    }
-
-    private sealed class HeaderActionButton : Button
-    {
-        protected override bool ShowFocusCues => false;
     }
 
     private sealed class ToggleSwitch : CheckBox
@@ -2824,8 +2835,25 @@ public sealed class MainForm : Form
 
     private async void TestSoundboardSound(string phrase)
     {
-        var path=GetSoundboardSound(phrase); if(string.IsNullOrWhiteSpace(path)||!File.Exists(path)){MessageBox.Show(this,"No soundboard clip is assigned.","VoiceGuard");return;}
-        try { SetStatus("Testing soundboard clip..."); double volume=Math.Clamp(GetSoundboardVolume(phrase)*(outputVolume.Value/100.0),0,1.5); await Task.Run(()=>PlayReplacementOnDefaultDevice(path,volume)); SetStatus("Soundboard test complete."); } catch(Exception ex){AddLog($"SOUNDBOARD TEST ERROR — {Path.GetFileName(path)} — {ex.Message}");}
+        var path = GetSoundboardSound(phrase);
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            MessageBox.Show(this, "No soundboard clip is assigned.", "VoiceGuard");
+            return;
+        }
+
+        try
+        {
+            SetStatus("Testing soundboard clip...");
+            double itemVolume = GetSoundboardVolume(phrase);
+            double masterVolume = outputVolume.Value / 100.0;
+            if (await PlayTestClipExclusiveAsync(path, itemVolume, masterVolume))
+                SetStatus("Soundboard test complete.");
+        }
+        catch (Exception ex)
+        {
+            AddLog($"SOUNDBOARD TEST ERROR — {Path.GetFileName(path)} — {ex.Message}");
+        }
     }
 
     private void AddBlockedWord()
@@ -2933,8 +2961,9 @@ public sealed class MainForm : Form
         }
         try
         {
-            double volume = Math.Clamp(GetReplacementVolume(word) * (outputVolume.Value / 100.0), 0.0, 1.5);
-            await Task.Run(() => PlayReplacementOnDefaultDevice(path, volume));
+            double itemVolume = GetReplacementVolume(word);
+            double masterVolume = outputVolume.Value / 100.0;
+            await PlayTestClipExclusiveAsync(path, itemVolume, masterVolume);
         }
         catch (Exception ex)
         {
@@ -2956,27 +2985,70 @@ public sealed class MainForm : Form
         {
             int read = source.Read(buffer, offset, count);
             if (Math.Abs(gain - 1f) < 0.0001f) return read;
-            if (gain <= 1f)
-            {
-                for (int i = offset; i < offset + read; i++) buffer[i] *= gain;
-                return read;
-            }
-            double denominator = Math.Tanh(gain);
+            // Use a straightforward volume multiplier. Values above 100%
+            // amplify the signal and clamp at full scale instead of normalizing
+            // it through a soft limiter that can make slider changes hard to hear.
             for (int i = offset; i < offset + read; i++)
-                buffer[i] = (float)(Math.Tanh(buffer[i] * gain) / denominator);
+                buffer[i] = (float)Math.Clamp(buffer[i] * gain, -1.0f, 1.0f);
             return read;
         }
     }
 
-    private static void PlayReplacementOnDefaultDevice(string path, double volume)
+    private async Task<bool> PlayTestClipExclusiveAsync(string path, double itemVolume, double masterVolume)
+    {
+        CancellationTokenSource requestCts;
+        lock (testPlaybackSync)
+        {
+            // Cancel the active clip and supersede any older test waiting to play.
+            testPlaybackRequestCts?.Cancel();
+            requestCts = new CancellationTokenSource();
+            testPlaybackRequestCts = requestCts;
+        }
+
+        bool acquiredPlaybackLane = false;
+        try
+        {
+            await testPlaybackSemaphore.WaitAsync(requestCts.Token);
+            acquiredPlaybackLane = true;
+
+            // A newer click may have arrived as this request acquired the semaphore.
+            requestCts.Token.ThrowIfCancellationRequested();
+            await Task.Run(() => PlayReplacementOnDefaultDevice(path, itemVolume, masterVolume, requestCts.Token), requestCts.Token);
+            return !requestCts.IsCancellationRequested;
+        }
+        catch (OperationCanceledException) when (requestCts.IsCancellationRequested)
+        {
+            return false;
+        }
+        finally
+        {
+            if (acquiredPlaybackLane)
+                testPlaybackSemaphore.Release();
+
+            lock (testPlaybackSync)
+            {
+                if (ReferenceEquals(testPlaybackRequestCts, requestCts))
+                    testPlaybackRequestCts = null;
+            }
+            requestCts.Dispose();
+        }
+    }
+
+    private static void PlayReplacementOnDefaultDevice(string path, double itemVolume, double masterVolume, CancellationToken cancellationToken)
     {
         using var reader = new AudioFileReader(path);
-        var volumeProvider = new GainSampleProvider(reader, Math.Clamp(volume, 0.0, 1.5));
+        // Mirror the outgoing VoiceGuard path: apply the item slider first,
+        // then the master slider as a separate stage. Do not combine the gains
+        // into one clamped value, because 150% item + 150% master must behave
+        // like the live output path, including its clipping characteristics.
+        ISampleProvider itemLevel = new GainSampleProvider(reader, Math.Clamp(itemVolume, 0.0, 1.5));
+        ISampleProvider masterLevel = new GainSampleProvider(itemLevel, Math.Clamp(masterVolume, 0.0, 1.5));
         using var player = new WaveOutEvent { DeviceNumber = -1, DesiredLatency = 80, NumberOfBuffers = 3 };
-        player.Init(volumeProvider);
+        player.Init(masterLevel);
+        cancellationToken.ThrowIfCancellationRequested();
         player.Play();
-        while (player.PlaybackState == PlaybackState.Playing)
-            System.Threading.Thread.Sleep(20);
+        while (!cancellationToken.IsCancellationRequested && player.PlaybackState == PlaybackState.Playing)
+            cancellationToken.WaitHandle.WaitOne(20);
     }
 
     private ReplacementPlaybackSettings GetReplacementPlaybackSettings(string word)
