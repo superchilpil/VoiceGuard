@@ -191,13 +191,17 @@ public sealed class VoiceToTextForm : Form
                 if (escapeDown && escapeWasDown == 0 &&
                     Interlocked.Exchange(ref escapeKeyDown, 1) == 0)
                 {
+                    DiagnosticLogger.Write("STT-CANCEL-TRACE", $"Escape key edge detected; recording={recording}, transcribing={transcribingFinal}, typedTextLength={typedText.Length}, foreground=0x{GetForegroundWindow().ToInt64():X}");
                     try
                     {
                         if (!IsDisposed)
                             BeginInvoke(new Action(() =>
                             {
                                 if (recording || transcribingFinal || typedText.Length > 0)
+                                {
+                                    DiagnosticLogger.Write("STT-CANCEL-TRACE", $"Escape handler is canceling session; recording={recording}, transcribing={transcribingFinal}, typedTextLength={typedText.Length}");
                                     CancelSession(false, false);
+                                }
                             }));
                     }
                     catch { }
@@ -376,6 +380,7 @@ public sealed class VoiceToTextForm : Form
 
     public void OnEngineStopped()
     {
+        DiagnosticLogger.Write("STT-CANCEL-TRACE", $"OnEngineStopped called; recording={recording}, transcribing={transcribingFinal}, typedTextLength={typedText.Length}");
         if (recording || transcribingFinal || !string.IsNullOrEmpty(typedText))
             CancelSession(true);
         statusLabel.Text = "VoiceGuard stopped — start it before dictating.";
@@ -404,6 +409,7 @@ public sealed class VoiceToTextForm : Form
 
     private void CancelSession(bool closeGameChat, bool clearTypedText = true)
     {
+        DiagnosticLogger.Write("STT-CANCEL-TRACE", $"CancelSession entered; closeGameChat={closeGameChat}, clearTypedText={clearTypedText}, recording={recording}, transcribing={transcribingFinal}, waitingForSecondTap={waitingForSecondTap}, typedTextLength={typedText.Length}, foreground=0x{GetForegroundWindow().ToInt64():X}");
         stopOrCancelTimer.Stop();
         waitingForSecondTap = false;
         setSpeechToTextActive(false);
