@@ -2560,7 +2560,7 @@ public sealed class MainForm : Form
             double holdSeconds = Math.Max(0.5, currentEngine.DelaySeconds + duration + 0.50);
             AddLog($"SOUNDBOARD PTT INJECTED — key={key} | hold={holdSeconds:0.000}s | phrase=\"{phrase}\"");
             SetStatus($"SOUNDBOARD TRANSMITTING — {phrase}");
-            SetMode("SOUNDBOARD TRANSMIT");
+            SetMode($"SOUNDBOARD • {phrase} ♪");
 
             _ = Task.Run(async () =>
             {
