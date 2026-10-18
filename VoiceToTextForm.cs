@@ -27,8 +27,6 @@ public sealed class VoiceToTextForm : Form
     private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
     private Thread? hotkeyMonitorThread;
     private CancellationTokenSource? hotkeyMonitorCts;
-    private int activationVirtualKey;
-    private int activationKeyDown;
     private int escapeKeyDown;
     private Keys chatKey;
     private bool recording;
@@ -65,7 +63,6 @@ public sealed class VoiceToTextForm : Form
     public VoiceToTextForm(Keys activationKey, Keys chatKey, Func<bool> startCapture, Func<bool> stopCapture,
         Action cancelCapture, Func<IntPtr> getAppWindowHandle, Action<bool> setSpeechToTextActive)
     {
-        activationVirtualKey = (int)activationKey;
         this.chatKey = chatKey;
         this.startCapture = startCapture;
         this.stopCapture = stopCapture;
@@ -160,7 +157,6 @@ public sealed class VoiceToTextForm : Form
 
     public void UpdateHotkeys(Keys newActivationKey, Keys newChatKey)
     {
-        Volatile.Write(ref activationVirtualKey, (int)newActivationKey);
         chatKey = newChatKey;
         if (IsHandleCreated && !IsDisposed)
             RebuildHooks();
@@ -181,9 +177,8 @@ public sealed class VoiceToTextForm : Form
         StopHotkeyMonitor();
         if (closing || IsDisposed) return;
 
-        // Match the polling pattern used by MainForm's VoiceGuard trigger and
-        // soundboard-listen monitors: GetAsyncKeyState, an atomic down-edge
-        // transition, a volatile virtual-key value, and a 20 ms polling interval.
+        // Escape cancellation stays in this controller. Activation-key detection
+        // is owned by MainForm beside the two established global key monitors.
         hotkeyMonitorCts = new CancellationTokenSource();
         var token = hotkeyMonitorCts.Token;
         Interlocked.Exchange(ref activationKeyDown, 0);
@@ -192,19 +187,6 @@ public sealed class VoiceToTextForm : Form
         {
             while (!token.IsCancellationRequested)
             {
-                int activationVk = Volatile.Read(ref activationVirtualKey);
-                bool activationDown = (GetAsyncKeyState(activationVk) & 0x8000) != 0;
-                int activationWasDown = Volatile.Read(ref activationKeyDown);
-                if (activationDown && activationWasDown == 0 &&
-                    Interlocked.Exchange(ref activationKeyDown, 1) == 0)
-                {
-                    try { if (!IsDisposed) BeginInvoke(new Action(() => HandleActivationPressed())); } catch { }
-                }
-                else if (!activationDown && activationWasDown != 0)
-                {
-                    Interlocked.Exchange(ref activationKeyDown, 0);
-                }
-
                 bool escapeDown = (GetAsyncKeyState((int)Keys.Escape) & 0x8000) != 0;
                 int escapeWasDown = Volatile.Read(ref escapeKeyDown);
                 if (escapeDown && escapeWasDown == 0 &&
@@ -243,6 +225,8 @@ public sealed class VoiceToTextForm : Form
         hotkeyMonitorCts = null;
         hotkeyMonitorThread = null;
     }
+
+    public void OnActivationHotkeyPressed() => HandleActivationPressed();
 
     private void HandleActivationPressed()
     {
