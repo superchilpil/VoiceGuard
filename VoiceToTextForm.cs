@@ -233,6 +233,7 @@ public sealed class VoiceToTextForm : Form
 
     private void HandleActivationPressed()
     {
+        DiagnosticLogger.Write("STT-CANCEL-TRACE", $"Activation handler entered; recording={recording}, transcribing={transcribingFinal}, waitingForSecondTap={waitingForSecondTap}, foreground=0x{GetForegroundWindow().ToInt64():X}");
         if (closing || IsDisposed) return;
 
         if (recording)
@@ -268,6 +269,7 @@ public sealed class VoiceToTextForm : Form
         // chat and immediately cancel without ever starting dictation.
         if (!startCapture())
         {
+            DiagnosticLogger.Write("STT-CANCEL-TRACE", "startCapture returned false; dictation session never entered recording state.");
             targetWindow = IntPtr.Zero;
             statusLabel.Text = "Could not start dictation. Start VoiceGuard and ensure Whisper is ready.";
             return;
@@ -281,6 +283,7 @@ public sealed class VoiceToTextForm : Form
         }
         catch (Exception ex)
         {
+            DiagnosticLogger.WriteException("STT-CANCEL-TRACE", ex);
             cancelCapture();
             targetWindow = IntPtr.Zero;
             targetChatOpened = false;
@@ -291,6 +294,7 @@ public sealed class VoiceToTextForm : Form
         typedText = "";
         transcriptBox.Clear();
         recording = true;
+        DiagnosticLogger.Write("STT-CANCEL-TRACE", $"Recording state enabled; chatKey={chatKey}, activation session active.");
         setSpeechToTextActive(true);
         statusLabel.Text = "Listening and typing live into game chat… press once to send or double-tap to cancel.";
         actionButton.Text = "Finish & Send";
