@@ -3983,7 +3983,8 @@ public sealed class MainForm : Form
                 voiceToTextChatKey,
                 BeginVoiceToTextCapture,
                 EndVoiceToTextCapture,
-                CancelVoiceToTextCapture);
+                CancelVoiceToTextCapture,
+                () => Handle);
         }
 
         // Keep the controller hidden. Its global hotkeys drive live typing
