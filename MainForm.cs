@@ -3938,7 +3938,6 @@ public sealed class MainForm : Form
     private void StopEngine()
     {
         voiceToTextForm?.OnEngineStopped();
-        voiceToTextForm?.OnEngineStopped();
         try { soundboardPlaybackCts?.Cancel(); } catch { }
         soundboardPlaybackCts?.Dispose();
         soundboardPlaybackCts = null;
