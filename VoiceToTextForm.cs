@@ -269,7 +269,7 @@ public sealed class VoiceToTextForm : Form
         transcriptBox.Clear();
         recording = true;
         setSpeechToTextActive(true);
-        statusLabel.Text = "Listening and typing live into game chat… press once to send or double-tap to cancel."
+        statusLabel.Text = "Listening and typing live into game chat… press once to send or double-tap to cancel.";
         actionButton.Text = "Finish & Send";
     }
 
