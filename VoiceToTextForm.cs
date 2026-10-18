@@ -15,8 +15,6 @@ public sealed class VoiceToTextForm : Form
     private static readonly Color TextMain = Color.FromArgb(238, 234, 245);
     private static readonly Color TextDim = Color.FromArgb(157, 149, 170);
 
-    private readonly TextBox activationKeyBox = new();
-    private readonly TextBox chatKeyBox = new();
     private readonly TextBox transcriptBox = new();
     private readonly Label statusLabel = new();
     private readonly Button actionButton = new();
@@ -24,7 +22,6 @@ public sealed class VoiceToTextForm : Form
     private readonly Func<bool> startCapture;
     private readonly Func<bool> stopCapture;
     private readonly Action cancelCapture;
-    private readonly Action<Keys, Keys> saveKeys;
     private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
     private PttKeyHook? activationHook;
     private PttKeyHook? escapeHook;
@@ -61,14 +58,13 @@ public sealed class VoiceToTextForm : Form
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     public VoiceToTextForm(Keys activationKey, Keys chatKey, Func<bool> startCapture, Func<bool> stopCapture,
-        Action cancelCapture, Action<Keys, Keys> saveKeys)
+        Action cancelCapture)
     {
         this.activationKey = activationKey;
         this.chatKey = chatKey;
         this.startCapture = startCapture;
         this.stopCapture = stopCapture;
         this.cancelCapture = cancelCapture;
-        this.saveKeys = saveKeys;
 
         Text = "VoiceGuard — Voice-to-Text (Experimental)";
         StartPosition = FormStartPosition.CenterParent;
@@ -91,38 +87,6 @@ public sealed class VoiceToTextForm : Form
             Text = "Press the hotkey to open chat and dictate. Press once to send, or double-tap to cancel.",
             AutoSize = true, Location = new Point(24, 51), ForeColor = TextDim
         });
-
-        Controls.Add(new Label { Text = "Dictation hotkey", AutoSize = true, Location = new Point(24, 83), ForeColor = TextDim });
-        activationKeyBox.SetBounds(24, 105, 150, 30);
-        activationKeyBox.ReadOnly = true;
-        activationKeyBox.TextAlign = HorizontalAlignment.Center;
-        StyleInput(activationKeyBox);
-        activationKeyBox.Text = activationKey.ToString();
-        activationKeyBox.KeyDown += (_, e) =>
-        {
-            activationKey = e.KeyCode == Keys.Escape ? Keys.F8 : e.KeyCode;
-            activationKeyBox.Text = activationKey.ToString();
-            e.SuppressKeyPress = true;
-            saveKeys(this.activationKey, chatKey);
-            RebuildHooks();
-        };
-        Controls.Add(activationKeyBox);
-
-        Controls.Add(new Label { Text = "Chat-open key", AutoSize = true, Location = new Point(194, 83), ForeColor = TextDim });
-        chatKeyBox.SetBounds(194, 105, 150, 30);
-        chatKeyBox.ReadOnly = true;
-        chatKeyBox.TextAlign = HorizontalAlignment.Center;
-        StyleInput(chatKeyBox);
-        chatKeyBox.Text = chatKey.ToString();
-        chatKeyBox.KeyDown += (_, e) =>
-        {
-            chatKey = e.KeyCode == Keys.Escape ? Keys.Enter : e.KeyCode;
-            chatKeyBox.Text = chatKey.ToString();
-            e.SuppressKeyPress = true;
-            saveKeys(activationKey, this.chatKey);
-            RebuildHooks();
-        };
-        Controls.Add(chatKeyBox);
 
         statusLabel.SetBounds(24, 151, 590, 42);
         statusLabel.Text = "Ready — start VoiceGuard and load Whisper first.";
@@ -190,13 +154,13 @@ public sealed class VoiceToTextForm : Form
         escapeHook?.Dispose();
         activationHook = new PttKeyHook(activationKey, down =>
         {
-            if (!down || activationKeyBox.Focused || chatKeyBox.Focused || closing) return;
+            if (!down || closing) return;
             try { if (!IsDisposed) BeginInvoke(() => HandleActivationPressed()); } catch { }
         });
         escapeHook = new PttKeyHook(Keys.Escape, down =>
         {
             if (!down || closing) return;
-            try { if (!IsDisposed) BeginInvoke(() => CancelSession(true)); } catch { }
+            try { if (!IsDisposed) BeginInvoke(() => CancelSession(false, false)); } catch { }
         });
         try { activationHook.Start(); escapeHook.Start(); }
         catch (Exception ex) { statusLabel.Text = "Hotkey unavailable: " + ex.Message; }
@@ -372,7 +336,7 @@ public sealed class VoiceToTextForm : Form
         transcriptBox.ScrollToCaret();
     }
 
-    private void CancelSession(bool closeGameChat)
+    private void CancelSession(bool closeGameChat, bool clearTypedText = true)
     {
         stopOrCancelTimer.Stop();
         waitingForSecondTap = false;
@@ -384,10 +348,10 @@ public sealed class VoiceToTextForm : Form
 
         try
         {
-            if (targetWindow != IntPtr.Zero)
+            if (targetWindow != IntPtr.Zero && (clearTypedText || closeGameChat))
             {
                 EnsureTargetForeground();
-                if (typedText.Length > 0)
+                if (clearTypedText && typedText.Length > 0)
                     for (int i = 0; i < typedText.Length; i++) SendKey(Keys.Back);
                 if (closeGameChat && targetChatOpened) SendKey(Keys.Escape);
             }
@@ -398,7 +362,9 @@ public sealed class VoiceToTextForm : Form
         transcriptBox.Clear();
         targetWindow = IntPtr.Zero;
         targetChatOpened = false;
-        if (!closing) statusLabel.Text = "Canceled. Nothing was sent.";
+        if (!closing) statusLabel.Text = clearTypedText
+            ? "Canceled. Nothing was sent."
+            : "Dictation stopped. Escape is closing game chat; no extra keys were sent.";
     }
 
     private void EnsureTargetForeground()
