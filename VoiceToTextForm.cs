@@ -25,8 +25,8 @@ public sealed class VoiceToTextForm : Form
     private readonly Func<IntPtr> getAppWindowHandle;
     private readonly Action<bool> setSpeechToTextActive;
     private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
-    private PttKeyHook? activationHook;
-    private PttKeyHook? escapeHook;
+    private Thread? hotkeyMonitorThread;
+    private CancellationTokenSource? hotkeyMonitorCts;
     private Keys activationKey;
     private Keys chatKey;
     private bool recording;
@@ -56,6 +56,7 @@ public sealed class VoiceToTextForm : Form
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
@@ -144,10 +145,7 @@ public sealed class VoiceToTextForm : Form
             stopOrCancelTimer.Stop();
             if (recording || transcribingFinal || !string.IsNullOrEmpty(typedText))
                 CancelSession(false);
-            activationHook?.Dispose();
-            escapeHook?.Dispose();
-            activationHook = null;
-            escapeHook = null;
+            StopHotkeyMonitor();
         };
     }
 
@@ -173,39 +171,76 @@ public sealed class VoiceToTextForm : Form
         stopOrCancelTimer.Stop();
         if (recording || transcribingFinal || !string.IsNullOrEmpty(typedText))
             CancelSession(false);
-        activationHook?.Dispose();
-        escapeHook?.Dispose();
-        activationHook = null;
-        escapeHook = null;
+        StopHotkeyMonitor();
     }
 
     private void RebuildHooks()
     {
-        activationHook?.Dispose();
-        escapeHook?.Dispose();
-        activationHook = new PttKeyHook(activationKey, down =>
+        StopHotkeyMonitor();
+        if (closing || IsDisposed) return;
+
+        // Poll the virtual-key state on a dedicated background thread rather than
+        // relying on WH_KEYBOARD_LL callbacks. This is more reliable for global
+        // hotkeys while a game is foregrounded, and never consumes the physical key.
+        hotkeyMonitorCts = new CancellationTokenSource();
+        var token = hotkeyMonitorCts.Token;
+        hotkeyMonitorThread = new Thread(() =>
         {
-            if (!down || closing) return;
-            try { if (!IsDisposed) BeginInvoke(() => HandleActivationPressed()); } catch { }
-        });
-        escapeHook = new PttKeyHook(Keys.Escape, down =>
+            int activationWasDown = 0;
+            int escapeWasDown = 0;
+            while (!token.IsCancellationRequested)
+            {
+                bool activationDown = (GetAsyncKeyState((int)activationKey) & 0x8000) != 0;
+                if (activationDown)
+                {
+                    if (Interlocked.Exchange(ref activationWasDown, 1) == 0)
+                    {
+                        try { if (!IsDisposed) BeginInvoke(new Action(() => HandleActivationPressed())); } catch { }
+                    }
+                }
+                else
+                {
+                    Interlocked.Exchange(ref activationWasDown, 0);
+                }
+
+                bool escapeDown = (GetAsyncKeyState((int)Keys.Escape) & 0x8000) != 0;
+                if (escapeDown)
+                {
+                    if (Interlocked.Exchange(ref escapeWasDown, 1) == 0)
+                    {
+                        try
+                        {
+                            if (!IsDisposed)
+                                BeginInvoke(new Action(() =>
+                                {
+                                    if (recording || transcribingFinal || typedText.Length > 0)
+                                        CancelSession(false, false);
+                                }));
+                        }
+                        catch { }
+                    }
+                }
+                else
+                {
+                    Interlocked.Exchange(ref escapeWasDown, 0);
+                }
+
+                Thread.Sleep(8);
+            }
+        })
         {
-            if (!down || closing) return;
-            try { if (!IsDisposed) BeginInvoke(() => CancelSession(false, false)); } catch { }
-        });
-        try
-        {
-            activationHook.Start();
-            escapeHook.Start();
-        }
-        catch (Exception ex)
-        {
-            activationHook?.Dispose();
-            escapeHook?.Dispose();
-            activationHook = null;
-            escapeHook = null;
-            statusLabel.Text = "Hotkey unavailable: " + ex.Message;
-        }
+            IsBackground = true,
+            Name = "VoiceGuard Speech-to-Text Hotkey Monitor"
+        };
+        hotkeyMonitorThread.Start();
+    }
+
+    private void StopHotkeyMonitor()
+    {
+        try { hotkeyMonitorCts?.Cancel(); } catch { }
+        hotkeyMonitorCts?.Dispose();
+        hotkeyMonitorCts = null;
+        hotkeyMonitorThread = null;
     }
 
     private void HandleActivationPressed()
