@@ -13,7 +13,11 @@ internal static class DiagnosticLogger
 
     private static string InitializePath()
     {
-        string primaryDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+        // Prefer the per-user data directory so logs remain available after
+        // updates and installs where the application folder may be read-only.
+        string primaryDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VoiceGuard", "Logs");
         try
         {
             Directory.CreateDirectory(primaryDirectory);
@@ -21,9 +25,7 @@ internal static class DiagnosticLogger
         }
         catch
         {
-            string fallbackDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "VoiceGuard", "Logs");
+            string fallbackDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
             Directory.CreateDirectory(fallbackDirectory);
             return Path.Combine(fallbackDirectory, "VoiceGuard_Diagnostic.log");
         }
