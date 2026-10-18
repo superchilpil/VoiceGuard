@@ -399,7 +399,7 @@ public sealed class MainForm : Form
             main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
         };
         var navButtons = new List<Button>();
-        var navLabels = new[] { "⌂   Dashboard", "♫   Audio", "☷   Word Filter", "▣   Soundboard", "≡   Logs", "⚙   Settings" };
+        var navLabels = new[] { "⌂   Dashboard", "♫   Audio", "☷   Word Filter", "▣   Soundboard", "≡   Logs", "⚙   Settings", "✦   Speech to Text" };
         Action<int> showPage = _ => { };
         for (var i = 0; i < navLabels.Length; i++)
         {
@@ -962,12 +962,7 @@ public sealed class MainForm : Form
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
         settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 774), ForeColor = TextDim });
-        var voiceToTextButton = new Button { Text = "Open Voice-to-Text (experimental)  →", Location = new Point(22, 690), Size = new Size(490, 38) };
-        StyleButton(voiceToTextButton, true);
-        ApplyRoundedButton(voiceToTextButton, 10);
-        voiceToTextButton.Click += (_, _) => OpenVoiceToTextForm();
-        settingsCard.Controls.Add(voiceToTextButton);
-        settingsBrand.Location = new Point(22, 750);
+        settingsBrand.Location = new Point(22, 690);
         settingsCard.Height = 850;
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
@@ -1351,10 +1346,105 @@ public sealed class MainForm : Form
         log.Font = new Font("Consolas", 9F);
         logHost.Controls.Add(log);
         ApplyDarkScrollbarTheme(log);
+        // Dedicated speech-to-text workspace page.
+        var speechToTextPanel = new Panel
+        {
+            Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0),
+            Visible = false
+        };
+        main.Controls.Add(speechToTextPanel, 6, 0);
+        var speechCard = new Panel
+        {
+            BackColor = Surface, Location = new Point(0, 0), Size = new Size(600, 460),
+            Padding = new Padding(22), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right
+        };
+        ApplyRoundedPanel(speechCard, 14);
+        speechToTextPanel.Controls.Add(speechCard);
+        speechToTextPanel.Resize += (_, _) => speechCard.Width = Math.Max(360, speechToTextPanel.ClientSize.Width - 16);
+        speechCard.Controls.Add(new Label
+        {
+            Text = "LIVE GAME-CHAT DICTATION", AutoSize = true, Location = new Point(22, 20),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 15F, FontStyle.Bold)
+        });
+        speechCard.Controls.Add(new Label
+        {
+            Text = "Speak naturally and VoiceGuard types recognized words directly into your game's chat.",
+            AutoSize = true, Location = new Point(24, 53), ForeColor = TextDim
+        });
+
+        var speechActivationLabel = new Label { Text = "DICTATION HOTKEY", AutoSize = true, Location = new Point(24, 100), ForeColor = TextDim, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold) };
+        speechCard.Controls.Add(speechActivationLabel);
+        var speechActivationKeyBox = new TextBox
+        {
+            Location = new Point(24, 124), Size = new Size(190, 34), ReadOnly = true,
+            Text = voiceToTextActivationKey.ToString(), TextAlign = HorizontalAlignment.Center,
+            BackColor = Surface2, ForeColor = TextMain, BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Segoe UI", 11F)
+        };
+        speechCard.Controls.Add(speechActivationKeyBox);
+        var speechActivationHint = new Label { Text = "Click here, then press a key to assign it.", AutoSize = true, Location = new Point(24, 162), ForeColor = TextDim };
+        speechCard.Controls.Add(speechActivationHint);
+        speechActivationKeyBox.Click += (_, _) => { speechActivationHint.Text = "Press any key…"; speechActivationKeyBox.Focus(); };
+        speechActivationKeyBox.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; speechActivationHint.Text = "Escape is reserved for canceling dictation."; speechActivationKeyBox.Text = voiceToTextActivationKey.ToString(); speechActivationKeyBox.Parent?.Focus(); return; }
+            voiceToTextActivationKey = e.KeyCode;
+            speechActivationKeyBox.Text = e.KeyCode.ToString();
+            speechActivationHint.Text = "Saved automatically.";
+            e.SuppressKeyPress = true;
+            SavePersistence();
+        };
+
+        var speechChatLabel = new Label { Text = "GAME CHAT-OPEN KEY", AutoSize = true, Location = new Point(250, 100), ForeColor = TextDim, Font = new Font("Segoe UI", 8.5F, FontStyle.Bold) };
+        speechCard.Controls.Add(speechChatLabel);
+        var speechChatKeyBox = new TextBox
+        {
+            Location = new Point(250, 124), Size = new Size(190, 34), ReadOnly = true,
+            Text = voiceToTextChatKey.ToString(), TextAlign = HorizontalAlignment.Center,
+            BackColor = Surface2, ForeColor = TextMain, BorderStyle = BorderStyle.FixedSingle,
+            Font = new Font("Segoe UI", 11F)
+        };
+        speechCard.Controls.Add(speechChatKeyBox);
+        var speechChatHint = new Label { Text = "Usually Enter in most games.", AutoSize = true, Location = new Point(250, 162), ForeColor = TextDim };
+        speechCard.Controls.Add(speechChatHint);
+        speechChatKeyBox.Click += (_, _) => { speechChatHint.Text = "Press any key…"; speechChatKeyBox.Focus(); };
+        speechChatKeyBox.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; speechChatHint.Text = "Escape is reserved for canceling dictation."; speechChatKeyBox.Text = voiceToTextChatKey.ToString(); speechChatKeyBox.Parent?.Focus(); return; }
+            voiceToTextChatKey = e.KeyCode;
+            speechChatKeyBox.Text = e.KeyCode.ToString();
+            speechChatHint.Text = "Saved automatically.";
+            e.SuppressKeyPress = true;
+            SavePersistence();
+        };
+
+        var speechFlow = new Label
+        {
+            Text = "HOW IT WORKS\n\n1. Press your dictation hotkey to open game chat and begin live transcription.\n2. Press it once more to finish and send the message.\n3. Double-tap the hotkey to cancel, clear VoiceGuard's typed text, and close chat.\n4. Press Escape to cancel dictation and let the game close chat normally.",
+            AutoSize = false, Location = new Point(24, 210), Size = new Size(520, 150),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 9.5F), BackColor = Surface2,
+            Padding = new Padding(14)
+        };
+        ApplyRoundedPanel(speechFlow, 10);
+        speechCard.Controls.Add(speechFlow);
+
+        var openSpeechButton = new Button
+        {
+            Text = "Open Live Dictation Window  →", Location = new Point(24, 382), Size = new Size(300, 42),
+            FlatStyle = FlatStyle.Flat, BackColor = Accent, ForeColor = TextMain,
+            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold), Cursor = Cursors.Hand
+        };
+        StyleButton(openSpeechButton, true);
+        ApplyRoundedButton(openSpeechButton, 10);
+        openSpeechButton.Click += (_, _) => OpenVoiceToTextForm();
+        speechCard.Controls.Add(openSpeechButton);
+        speechCard.Height = 455;
+        ApplyDarkScrollbarTheme(speechToTextPanel);
+
         showPage = pageIndex =>
         {
-            selectedPage = Math.Clamp(pageIndex, 0, 5);
-            var widths = new[] { 0, 0, 0, 0, 0, 0 };
+            selectedPage = Math.Clamp(pageIndex, 0, 6);
+            var widths = new[] { 0, 0, 0, 0, 0, 0, 0 };
             widths[selectedPage] = 1;
             main.SuspendLayout();
             main.ColumnStyles.Clear();
@@ -1378,6 +1468,7 @@ public sealed class MainForm : Form
             soundboardPanel.Visible = selectedPage == 3;
             logSection.Visible = selectedPage == 4;
             settingsPanel.Visible = selectedPage == 5;
+            speechToTextPanel.Visible = selectedPage == 6;
             pageTitle.Text = navLabels[selectedPage];
             pageSubtitle.Text = selectedPage switch
             {
@@ -1386,7 +1477,8 @@ public sealed class MainForm : Form
                 2 => "Configure blocked words, aliases, and replacement sounds.",
                 3 => "Manage soundboard phrases, aliases, and private playback.",
                 4 => "Review VoiceGuard runtime and speech-filter activity.",
-                _ => "Configure startup, tray behavior, and the mode overlay."
+                5 => "Configure startup, tray behavior, and the mode overlay.",
+                _ => "Configure dictation controls and live in-game speech-to-text."
             };
             statusBadge.Visible = false;
             Text = "VoiceGuard — " + navLabels[selectedPage].Trim();
