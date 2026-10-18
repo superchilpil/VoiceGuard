@@ -387,11 +387,11 @@ public sealed class MainForm : Form
         var main = new TableLayoutPanel
         {
             Location = new Point(0, 88), Width = 1, Height = 1, AutoSize = false,
-            ColumnCount = 6, RowCount = 1, Padding = new Padding(18, 10, 18, 18),
+            ColumnCount = 7, RowCount = 1, Padding = new Padding(18, 10, 18, 18),
             Margin = new Padding(0), BackColor = Bg
         };
         main.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (var i = 1; i < 6; i++) main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
+        for (var i = 1; i < 7; i++) main.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 0));
         pageHost.Controls.Add(main);
         pageHost.Resize += (_, _) =>
         {
