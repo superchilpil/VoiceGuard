@@ -13,7 +13,12 @@ internal static class DiagnosticLogger
 
     private static string InitializePath()
     {
-        string primaryDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
+        // Keep diagnostics in the same per-user location used by VoiceGuard's
+        // config and Whisper model. Install directories may be read-only, and
+        // writing there made logs appear to vanish from AppData after updates.
+        string primaryDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VoiceGuard", "Logs");
         try
         {
             Directory.CreateDirectory(primaryDirectory);
@@ -21,9 +26,8 @@ internal static class DiagnosticLogger
         }
         catch
         {
-            string fallbackDirectory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "VoiceGuard", "Logs");
+            // Portable/locked-down installs may not allow LocalAppData writes.
+            string fallbackDirectory = Path.Combine(AppContext.BaseDirectory, "Logs");
             Directory.CreateDirectory(fallbackDirectory);
             return Path.Combine(fallbackDirectory, "VoiceGuard_Diagnostic.log");
         }
