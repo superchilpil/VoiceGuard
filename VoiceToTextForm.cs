@@ -27,7 +27,6 @@ public sealed class VoiceToTextForm : Form
     private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
     private Thread? hotkeyMonitorThread;
     private CancellationTokenSource? hotkeyMonitorCts;
-    private Keys activationKey;
     private int activationVirtualKey;
     private int activationKeyDown;
     private int escapeKeyDown;
@@ -66,7 +65,6 @@ public sealed class VoiceToTextForm : Form
     public VoiceToTextForm(Keys activationKey, Keys chatKey, Func<bool> startCapture, Func<bool> stopCapture,
         Action cancelCapture, Func<IntPtr> getAppWindowHandle, Action<bool> setSpeechToTextActive)
     {
-        this.activationKey = activationKey;
         activationVirtualKey = (int)activationKey;
         this.chatKey = chatKey;
         this.startCapture = startCapture;
@@ -162,7 +160,6 @@ public sealed class VoiceToTextForm : Form
 
     public void UpdateHotkeys(Keys newActivationKey, Keys newChatKey)
     {
-        activationKey = newActivationKey;
         Volatile.Write(ref activationVirtualKey, (int)newActivationKey);
         chatKey = newChatKey;
         if (IsHandleCreated && !IsDisposed)
