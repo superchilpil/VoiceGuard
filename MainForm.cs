@@ -3910,12 +3910,14 @@ public sealed class MainForm : Form
         if (engine == null || detector == null || !detector.IsReady)
             return false;
 
-        if (!detector.StartVoiceToText(engine.CapturePcmSeconds))
+        // Acquire/release the audio-engine lock before touching the detector lock.
+        // Capture callbacks run under the engine lock and then enter the detector.
+        if (!engine.SetVoiceToTextListening(true))
             return false;
 
-        if (!engine.SetVoiceToTextListening(true))
+        if (!detector.StartVoiceToText(engine.CapturePcmSeconds))
         {
-            detector.CancelVoiceToText();
+            engine.SetVoiceToTextListening(false);
             return false;
         }
 

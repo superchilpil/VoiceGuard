@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - "ui/**"
-      - "feature/**"
-      - "fix/**"
   pull_request:
     branches:
       - main
@@ -39,7 +37,7 @@ jobs:
       - name: Upload test build
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceGuard-Test-win-x64
+          name: VoiceGuard-UI-Redesign-win-x64
           path: publish/
           if-no-files-found: error
           retention-days: 14
