@@ -3984,7 +3984,8 @@ public sealed class MainForm : Form
                 BeginVoiceToTextCapture,
                 EndVoiceToTextCapture,
                 CancelVoiceToTextCapture,
-                () => Handle);
+                () => Handle,
+                active => SetMode(active ? "SPEECH TO TEXT" : "LIVE"));
         }
 
         // Keep the controller hidden. Its global hotkeys drive live typing
