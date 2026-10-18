@@ -3365,7 +3365,8 @@ public sealed class MainForm : Form
         detector.SetWords(GetWords());
         detector.SetVoiceToTextCallbacks(
             text => { try { if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnTranscriptionReady(text)); } catch { } },
-            error => { try { if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnTranscriptionFailed(error)); } catch { } });
+            error => { try { if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnTranscriptionFailed(error)); } catch { } },
+            text => { try { if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnLiveTranscription(text)); } catch { } });
         SyncAliasesToDetector();
         detector.SetSoundboardPhrases(soundboardSounds.Keys);
             detector.SetSoundboardAliases(BuildSoundboardAliasMap());
