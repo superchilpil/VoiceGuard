@@ -22,6 +22,7 @@ public sealed class VoiceToTextForm : Form
     private readonly Func<bool> startCapture;
     private readonly Func<bool> stopCapture;
     private readonly Action cancelCapture;
+    private readonly Func<IntPtr> getAppWindowHandle;
     private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
     private PttKeyHook? activationHook;
     private PttKeyHook? escapeHook;
@@ -58,13 +59,14 @@ public sealed class VoiceToTextForm : Form
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     public VoiceToTextForm(Keys activationKey, Keys chatKey, Func<bool> startCapture, Func<bool> stopCapture,
-        Action cancelCapture)
+        Action cancelCapture, Func<IntPtr> getAppWindowHandle)
     {
         this.activationKey = activationKey;
         this.chatKey = chatKey;
         this.startCapture = startCapture;
         this.stopCapture = stopCapture;
         this.cancelCapture = cancelCapture;
+        this.getAppWindowHandle = getAppWindowHandle;
 
         Text = "VoiceGuard — Voice-to-Text (Experimental)";
         StartPosition = FormStartPosition.CenterParent;
@@ -229,7 +231,7 @@ public sealed class VoiceToTextForm : Form
         if (transcribingFinal) return;
 
         targetWindow = GetForegroundWindow();
-        if (targetWindow == IntPtr.Zero || targetWindow == Handle)
+        if (targetWindow == IntPtr.Zero || targetWindow == Handle || targetWindow == getAppWindowHandle())
         {
             statusLabel.Text = "Activate your game first, then press the dictation hotkey.";
             targetWindow = IntPtr.Zero;
