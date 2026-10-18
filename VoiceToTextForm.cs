@@ -28,6 +28,9 @@ public sealed class VoiceToTextForm : Form
     private Thread? hotkeyMonitorThread;
     private CancellationTokenSource? hotkeyMonitorCts;
     private Keys activationKey;
+    private int activationVirtualKey;
+    private int activationKeyDown;
+    private int escapeKeyDown;
     private Keys chatKey;
     private bool recording;
     private bool transcribingFinal;
@@ -64,6 +67,7 @@ public sealed class VoiceToTextForm : Form
         Action cancelCapture, Func<IntPtr> getAppWindowHandle, Action<bool> setSpeechToTextActive)
     {
         this.activationKey = activationKey;
+        activationVirtualKey = (int)activationKey;
         this.chatKey = chatKey;
         this.startCapture = startCapture;
         this.stopCapture = stopCapture;
@@ -159,6 +163,7 @@ public sealed class VoiceToTextForm : Form
     public void UpdateHotkeys(Keys newActivationKey, Keys newChatKey)
     {
         activationKey = newActivationKey;
+        Volatile.Write(ref activationVirtualKey, (int)newActivationKey);
         chatKey = newChatKey;
         if (IsHandleCreated && !IsDisposed)
             RebuildHooks();
@@ -179,53 +184,52 @@ public sealed class VoiceToTextForm : Form
         StopHotkeyMonitor();
         if (closing || IsDisposed) return;
 
-        // Poll the virtual-key state on a dedicated background thread rather than
-        // relying on WH_KEYBOARD_LL callbacks. This is more reliable for global
-        // hotkeys while a game is foregrounded, and never consumes the physical key.
+        // Match the polling pattern used by MainForm's VoiceGuard trigger and
+        // soundboard-listen monitors: GetAsyncKeyState, an atomic down-edge
+        // transition, a volatile virtual-key value, and a 20 ms polling interval.
         hotkeyMonitorCts = new CancellationTokenSource();
         var token = hotkeyMonitorCts.Token;
+        Interlocked.Exchange(ref activationKeyDown, 0);
+        Interlocked.Exchange(ref escapeKeyDown, 0);
         hotkeyMonitorThread = new Thread(() =>
         {
-            int activationWasDown = 0;
-            int escapeWasDown = 0;
             while (!token.IsCancellationRequested)
             {
-                bool activationDown = (GetAsyncKeyState((int)activationKey) & 0x8000) != 0;
-                if (activationDown)
+                int activationVk = Volatile.Read(ref activationVirtualKey);
+                bool activationDown = (GetAsyncKeyState(activationVk) & 0x8000) != 0;
+                int activationWasDown = Volatile.Read(ref activationKeyDown);
+                if (activationDown && activationWasDown == 0 &&
+                    Interlocked.Exchange(ref activationKeyDown, 1) == 0)
                 {
-                    if (Interlocked.Exchange(ref activationWasDown, 1) == 0)
-                    {
-                        try { if (!IsDisposed) BeginInvoke(new Action(() => HandleActivationPressed())); } catch { }
-                    }
+                    try { if (!IsDisposed) BeginInvoke(new Action(() => HandleActivationPressed())); } catch { }
                 }
-                else
+                else if (!activationDown && activationWasDown != 0)
                 {
-                    Interlocked.Exchange(ref activationWasDown, 0);
+                    Interlocked.Exchange(ref activationKeyDown, 0);
                 }
 
                 bool escapeDown = (GetAsyncKeyState((int)Keys.Escape) & 0x8000) != 0;
-                if (escapeDown)
+                int escapeWasDown = Volatile.Read(ref escapeKeyDown);
+                if (escapeDown && escapeWasDown == 0 &&
+                    Interlocked.Exchange(ref escapeKeyDown, 1) == 0)
                 {
-                    if (Interlocked.Exchange(ref escapeWasDown, 1) == 0)
+                    try
                     {
-                        try
-                        {
-                            if (!IsDisposed)
-                                BeginInvoke(new Action(() =>
-                                {
-                                    if (recording || transcribingFinal || typedText.Length > 0)
-                                        CancelSession(false, false);
-                                }));
-                        }
-                        catch { }
+                        if (!IsDisposed)
+                            BeginInvoke(new Action(() =>
+                            {
+                                if (recording || transcribingFinal || typedText.Length > 0)
+                                    CancelSession(false, false);
+                            }));
                     }
+                    catch { }
                 }
-                else
+                else if (!escapeDown && escapeWasDown != 0)
                 {
-                    Interlocked.Exchange(ref escapeWasDown, 0);
+                    Interlocked.Exchange(ref escapeKeyDown, 0);
                 }
 
-                Thread.Sleep(8);
+                Thread.Sleep(20);
             }
         })
         {
