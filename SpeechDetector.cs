@@ -26,7 +26,6 @@ public sealed class SpeechDetector : IAsyncDisposable
     private readonly CancellationTokenSource cts = new();
     private readonly Task worker;
     private int activeRecognitions;
-    private int activeVoiceToTextRecognitions;
     private long completedThroughBits;
 
     // Continuous analysis watermark.  Unlike the old max-completed timestamp,
@@ -725,9 +724,7 @@ public sealed class SpeechDetector : IAsyncDisposable
 
         try
         {
-            if (window.IsVoiceToText)
-                Interlocked.Increment(ref activeVoiceToTextRecognitions);
-            else
+            if (!window.IsVoiceToText)
                 Interlocked.Increment(ref activeRecognitions);
             long recognitionStarted = Environment.TickCount64;
             int queueDepthAtStart = queueDepthAtDispatch;
@@ -856,9 +853,7 @@ public sealed class SpeechDetector : IAsyncDisposable
                     }
                 }
             }
-            if (window.IsVoiceToText)
-                Interlocked.Decrement(ref activeVoiceToTextRecognitions);
-            else
+            if (!window.IsVoiceToText)
                 Interlocked.Decrement(ref activeRecognitions);
         }
     }
