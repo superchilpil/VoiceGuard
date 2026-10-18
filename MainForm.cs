@@ -130,6 +130,7 @@ public sealed class MainForm : Form
 
     private const int WM_HOTKEY = 0x0312;
     private const int StartStopHotkeyId = 0x5647;
+    private const int VoiceToTextActivationHotkeyId = 0x5648;
     private const uint MOD_ALT = 0x0001;
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
@@ -1391,6 +1392,7 @@ public sealed class MainForm : Form
             Volatile.Write(ref voiceToTextActivationVirtualKey, (int)e.KeyCode);
             speechActivationKeyBox.Text = e.KeyCode.ToString();
             voiceToTextForm?.UpdateHotkeys(voiceToTextActivationKey, voiceToTextChatKey);
+            StartVoiceToTextKeyMonitor();
             speechActivationHint.Text = "Saved automatically.";
             e.SuppressKeyPress = true;
             SavePersistence();
@@ -2230,9 +2232,18 @@ public sealed class MainForm : Form
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == StartStopHotkeyId)
+        if (m.Msg == WM_HOTKEY)
         {
-            BeginInvoke(async () => await ToggleEngineAsync());
+            int hotkeyId = m.WParam.ToInt32();
+            if (hotkeyId == StartStopHotkeyId)
+            {
+                BeginInvoke(async () => await ToggleEngineAsync());
+            }
+            else if (hotkeyId == VoiceToTextActivationHotkeyId)
+            {
+                AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey(voiceToTextActivationKey)}");
+                voiceToTextForm?.OnActivationHotkeyPressed();
+            }
         }
 
         base.WndProc(ref m);
@@ -4010,59 +4021,26 @@ public sealed class MainForm : Form
 
     private void StartVoiceToTextKeyMonitor()
     {
-        if (voiceToTextKeyThread is { IsAlive: true }) return;
+        if (!IsHandleCreated) return;
 
-        voiceToTextKeyCts?.Cancel();
-        voiceToTextKeyCts?.Dispose();
-        voiceToTextKeyCts = new CancellationTokenSource();
-        var token = voiceToTextKeyCts.Token;
-        Volatile.Write(ref voiceToTextActivationVirtualKey, (int)voiceToTextActivationKey);
-        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
-        AddLog($"SPEECH-TO-TEXT HOTKEY MONITOR STARTING — key={DisplayKey(voiceToTextActivationKey)}");
-
-        voiceToTextKeyThread = new Thread(() =>
+        _ = UnregisterHotKey(Handle, VoiceToTextActivationHotkeyId);
+        uint keyCode = (uint)voiceToTextActivationKey;
+        if (!RegisterHotKey(Handle, VoiceToTextActivationHotkeyId, MOD_NOREPEAT, keyCode))
         {
-            while (!token.IsCancellationRequested)
-            {
-                int vk = Volatile.Read(ref voiceToTextActivationVirtualKey);
-                bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                int wasDown = Volatile.Read(ref voiceToTextActivationKeyDown);
+            int error = Marshal.GetLastWin32Error();
+            AddLog($"SPEECH-TO-TEXT HOTKEY REGISTER ERROR — key={DisplayKey(voiceToTextActivationKey)} | Win32={error}");
+            DiagnosticLogger.Write("STT", $"RegisterHotKey failed for {voiceToTextActivationKey}; Win32={error}");
+            return;
+        }
 
-                if (down && wasDown == 0 &&
-                    Interlocked.Exchange(ref voiceToTextActivationKeyDown, 1) == 0)
-                {
-                    try
-                    {
-                        if (!IsDisposed) BeginInvoke(() =>
-                        {
-                            AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey((Keys)vk)}");
-                            voiceToTextForm?.OnActivationHotkeyPressed();
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        AddLog($"SPEECH-TO-TEXT HOTKEY DISPATCH ERROR — {ex.GetType().Name}: {ex.Message}");
-                    }
-                }
-                else if (!down && wasDown != 0)
-                {
-                    Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
-                }
-
-                Thread.Sleep(20);
-            }
-        })
-        { IsBackground = true, Name = "VoiceGuard Speech-to-Text Key" };
-        voiceToTextKeyThread.Start();
+        AddLog($"SPEECH-TO-TEXT HOTKEY REGISTERED — key={DisplayKey(voiceToTextActivationKey)}");
+        DiagnosticLogger.Write("STT", $"RegisterHotKey succeeded for {voiceToTextActivationKey}");
     }
 
     private void StopVoiceToTextKeyMonitor()
     {
-        try { voiceToTextKeyCts?.Cancel(); } catch { }
-        voiceToTextKeyCts?.Dispose();
-        voiceToTextKeyCts = null;
-        voiceToTextKeyThread = null;
-        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
+        if (IsHandleCreated)
+            _ = UnregisterHotKey(Handle, VoiceToTextActivationHotkeyId);
     }
 
     private bool BeginVoiceToTextCapture()
