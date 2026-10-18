@@ -96,6 +96,13 @@ internal sealed class ModeOverlayForm : Form
             currentMode.Contains("STOP", StringComparison.OrdinalIgnoreCase) ? Color.Gray : Color.LimeGreen;
         textLabel.Text = "VOICEGUARD  •  " + currentMode;
         textLabel.ForeColor = Color.FromArgb(190, modeColor);
+        if (!string.Equals(styleName, "LED", StringComparison.OrdinalIgnoreCase))
+        {
+            // Expand the text overlay for longer soundboard phrases instead of clipping them.
+            int textWidth = TextRenderer.MeasureText(textLabel.Text, textLabel.Font).Width + 20;
+            Size = new Size(Math.Clamp(textWidth, 230, 700), 38);
+            PositionOverlay();
+        }
         Invalidate();
     }
 }
