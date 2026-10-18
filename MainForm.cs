@@ -862,7 +862,7 @@ public sealed class MainForm : Form
 
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
-        main.Controls.Add(settingsPanel, 5, 0);
+        main.Controls.Add(settingsPanel, 6, 0);
         var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 850), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
