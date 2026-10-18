@@ -3665,43 +3665,6 @@ public sealed class MainForm : Form
             { IsBackground = true, Name = "VoiceGuard Soundboard Listen Key" };
             soundboardListenKeyThread.Start();
 
-            // Use the exact same MainForm-level GetAsyncKeyState monitor pattern
-            // as the working VoiceGuard trigger and soundboard-listen hotkeys.
-            voiceToTextKeyCts?.Cancel();
-            voiceToTextKeyCts?.Dispose();
-            voiceToTextKeyCts = new CancellationTokenSource();
-            var voiceToTextToken = voiceToTextKeyCts.Token;
-            Volatile.Write(ref voiceToTextActivationVirtualKey, (int)voiceToTextActivationKey);
-            Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
-            AddLog($"SPEECH-TO-TEXT HOTKEY MONITOR STARTING — key={DisplayKey(voiceToTextActivationKey)}");
-            voiceToTextKeyThread = new Thread(() =>
-            {
-                while (!voiceToTextToken.IsCancellationRequested)
-                {
-                    int vk = Volatile.Read(ref voiceToTextActivationVirtualKey);
-                    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
-                    int wasDown = Volatile.Read(ref voiceToTextActivationKeyDown);
-                    if (down && wasDown == 0 && Interlocked.Exchange(ref voiceToTextActivationKeyDown, 1) == 0)
-                    {
-                        try
-                        {
-                            if (!IsDisposed) BeginInvoke(() =>
-                            {
-                                AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey((Keys)vk)}");
-                                voiceToTextForm?.OnActivationHotkeyPressed();
-                            });
-                        }
-                        catch { }
-                    }
-                    else if (!down && wasDown != 0 && Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0) == 1)
-                    {
-                        // Release edge resets the monitor for the next press.
-                    }
-                    Thread.Sleep(20);
-                }
-            }) { IsBackground = true, Name = "VoiceGuard Speech-to-Text Key" };
-            voiceToTextKeyThread.Start();
-
             start.Text = "Stop VoiceGuard";
             start.Enabled = true;
             AddLog("VoiceGuard started.");
@@ -4034,6 +3997,71 @@ public sealed class MainForm : Form
         // Keep the controller hidden. Its global hotkeys drive live typing
         // directly into the game; no secondary dictation window is required.
         voiceToTextForm.StartHotkeys();
+        StartVoiceToTextKeyMonitor();
+        FormClosed -= MainForm_FormClosed;
+        FormClosed += MainForm_FormClosed;
+    }
+
+    private void MainForm_FormClosed(object? sender, FormClosedEventArgs e)
+    {
+        StopVoiceToTextKeyMonitor();
+    }
+
+    private void StartVoiceToTextKeyMonitor()
+    {
+        if (voiceToTextKeyThread is { IsAlive: true }) return;
+
+        voiceToTextKeyCts?.Cancel();
+        voiceToTextKeyCts?.Dispose();
+        voiceToTextKeyCts = new CancellationTokenSource();
+        var token = voiceToTextKeyCts.Token;
+        Volatile.Write(ref voiceToTextActivationVirtualKey, (int)voiceToTextActivationKey);
+        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
+        AddLog($"SPEECH-TO-TEXT HOTKEY MONITOR STARTING — key={DisplayKey(voiceToTextActivationKey)}");
+
+        voiceToTextKeyThread = new Thread(() =>
+        {
+            while (!token.IsCancellationRequested)
+            {
+                int vk = Volatile.Read(ref voiceToTextActivationVirtualKey);
+                bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                int wasDown = Volatile.Read(ref voiceToTextActivationKeyDown);
+
+                if (down && wasDown == 0 &&
+                    Interlocked.Exchange(ref voiceToTextActivationKeyDown, 1) == 0)
+                {
+                    try
+                    {
+                        if (!IsDisposed) BeginInvoke(() =>
+                        {
+                            AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey((Keys)vk)}");
+                            voiceToTextForm?.OnActivationHotkeyPressed();
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        AddLog($"SPEECH-TO-TEXT HOTKEY DISPATCH ERROR — {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+                else if (!down && wasDown != 0)
+                {
+                    Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
+                }
+
+                Thread.Sleep(20);
+            }
+        })
+        { IsBackground = true, Name = "VoiceGuard Speech-to-Text Key" };
+        voiceToTextKeyThread.Start();
+    }
+
+    private void StopVoiceToTextKeyMonitor()
+    {
+        try { voiceToTextKeyCts?.Cancel(); } catch { }
+        voiceToTextKeyCts?.Dispose();
+        voiceToTextKeyCts = null;
+        voiceToTextKeyThread = null;
+        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
     }
 
     private bool BeginVoiceToTextCapture()
@@ -4089,11 +4117,6 @@ public sealed class MainForm : Form
         voiceGuardTriggerKeyCts?.Cancel();
         voiceGuardTriggerKeyCts?.Dispose();
         voiceGuardTriggerKeyCts = null;
-        voiceToTextKeyCts?.Cancel();
-        voiceToTextKeyCts?.Dispose();
-        voiceToTextKeyCts = null;
-        voiceToTextKeyThread = null;
-        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
         voiceGuardPttCts?.Cancel();
         voiceGuardPttCts?.Dispose();
         voiceGuardPttCts = null;
