@@ -3716,6 +3716,8 @@ public sealed class MainForm : Form
             userLog = text.Trim();
         }
         else if (text.StartsWith("SPEECH-TO-TEXT HOTKEY MONITOR STARTING", StringComparison.OrdinalIgnoreCase) ||
+                 text.StartsWith("SPEECH-TO-TEXT HOTKEY REGISTERED", StringComparison.OrdinalIgnoreCase) ||
+                 text.StartsWith("SPEECH-TO-TEXT HOTKEY REGISTER ERROR", StringComparison.OrdinalIgnoreCase) ||
                  text.StartsWith("SPEECH-TO-TEXT HOTKEY DETECTED", StringComparison.OrdinalIgnoreCase) ||
                  text.StartsWith("SPEECH-TO-TEXT HOTKEY DISPATCH ERROR", StringComparison.OrdinalIgnoreCase) ||
                  text.StartsWith("VOICE TO TEXT — ", StringComparison.OrdinalIgnoreCase))
