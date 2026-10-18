@@ -23,6 +23,7 @@ public sealed class VoiceToTextForm : Form
     private readonly Func<bool> stopCapture;
     private readonly Action cancelCapture;
     private readonly Func<IntPtr> getAppWindowHandle;
+    private readonly Action<bool> setSpeechToTextActive;
     private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
     private PttKeyHook? activationHook;
     private PttKeyHook? escapeHook;
@@ -59,7 +60,7 @@ public sealed class VoiceToTextForm : Form
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     public VoiceToTextForm(Keys activationKey, Keys chatKey, Func<bool> startCapture, Func<bool> stopCapture,
-        Action cancelCapture, Func<IntPtr> getAppWindowHandle)
+        Action cancelCapture, Func<IntPtr> getAppWindowHandle, Action<bool> setSpeechToTextActive)
     {
         this.activationKey = activationKey;
         this.chatKey = chatKey;
@@ -67,6 +68,7 @@ public sealed class VoiceToTextForm : Form
         this.stopCapture = stopCapture;
         this.cancelCapture = cancelCapture;
         this.getAppWindowHandle = getAppWindowHandle;
+        this.setSpeechToTextActive = setSpeechToTextActive;
 
         Text = "VoiceGuard — Voice-to-Text (Experimental)";
         StartPosition = FormStartPosition.CenterParent;
@@ -266,7 +268,8 @@ public sealed class VoiceToTextForm : Form
         typedText = "";
         transcriptBox.Clear();
         recording = true;
-        statusLabel.Text = "Listening and typing live into game chat… press once to send or double-tap to cancel.";
+        setSpeechToTextActive(true);
+        statusLabel.Text = "Listening and typing live into game chat… press once to send or double-tap to cancel."
         actionButton.Text = "Finish & Send";
     }
 
@@ -331,6 +334,7 @@ public sealed class VoiceToTextForm : Form
             actionButton.Enabled = true;
             actionButton.Text = "Start Dictation";
             statusLabel.Text = "Message sent.";
+            setSpeechToTextActive(false);
         }
         catch (Exception ex)
         {
@@ -383,6 +387,7 @@ public sealed class VoiceToTextForm : Form
     {
         stopOrCancelTimer.Stop();
         waitingForSecondTap = false;
+        setSpeechToTextActive(false);
         if (recording || transcribingFinal) cancelCapture();
         recording = false;
         transcribingFinal = false;
