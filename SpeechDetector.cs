@@ -26,6 +26,7 @@ public sealed class SpeechDetector : IAsyncDisposable
     private readonly CancellationTokenSource cts = new();
     private readonly Task worker;
     private int activeRecognitions;
+    private int activeVoiceToTextRecognitions;
     private long completedThroughBits;
 
     // Continuous analysis watermark.  Unlike the old max-completed timestamp,
@@ -148,7 +149,7 @@ public sealed class SpeechDetector : IAsyncDisposable
 
     public bool HasPendingAnalysis
     {
-        get { lock (workQueueSync) return activeRecognitions > 0 || workQueue.Count > 0; }
+        get { lock (workQueueSync) return activeRecognitions > 0 || workQueue.Any(window => !window.IsVoiceToText); }
     }
     public double AnalysisSafeThroughSeconds => Volatile.Read(ref analysisSafeThroughBits) == 0 ? 0.0 : BitConverter.Int64BitsToDouble(Volatile.Read(ref analysisSafeThroughBits));
     private long analysisSafeThroughBits;
@@ -724,7 +725,10 @@ public sealed class SpeechDetector : IAsyncDisposable
 
         try
         {
-            Interlocked.Increment(ref activeRecognitions);
+            if (window.IsVoiceToText)
+                Interlocked.Increment(ref activeVoiceToTextRecognitions);
+            else
+                Interlocked.Increment(ref activeRecognitions);
             long recognitionStarted = Environment.TickCount64;
             int queueDepthAtStart = queueDepthAtDispatch;
             using var wav = Build16kMonoWav(window.Pcm48k);
@@ -852,7 +856,10 @@ public sealed class SpeechDetector : IAsyncDisposable
                     }
                 }
             }
-            Interlocked.Decrement(ref activeRecognitions);
+            if (window.IsVoiceToText)
+                Interlocked.Decrement(ref activeVoiceToTextRecognitions);
+            else
+                Interlocked.Decrement(ref activeRecognitions);
         }
     }
 
