@@ -1502,6 +1502,8 @@ public sealed class MainForm : Form
         Load += (_, _) =>
         {
             LoadPersistence();
+            speechActivationKeyBox.Text = voiceToTextActivationKey.ToString();
+            speechChatKeyBox.Text = voiceToTextChatKey.ToString();
             if (Controls.Find("dashboardPttValue", true).FirstOrDefault() is Label dashboardPttLabel) dashboardPttLabel.Text = ptt.Text;
             LoadDevices();
             ApplyStartWithWindowsSetting();
