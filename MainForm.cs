@@ -513,17 +513,23 @@ public sealed class MainForm : Form
         var heroCard = MakeDashboardCard("VoiceGuard status");
         dashboard.Controls.Add(heroCard, 0, 0);
         dashboard.SetColumnSpan(heroCard, 2);
+        heroCard.Controls.Add(new Label
+        {
+            Text = "Your Voice Filtered for Snowflakes", Name = "dashboardHeroTitle", AutoSize = false,
+            Location = new Point(20, 42), Size = new Size(0, 38), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            ForeColor = TextMain, Font = new Font("Segoe UI", 10.5F, FontStyle.Bold), AutoEllipsis = false
+        });
         var dashboardMode = new Label
         {
             Name = "dashboardMode", Text = "●  READY WHEN YOU ARE", AutoSize = false,
-            Location = new Point(20, 48), Size = new Size(0, 24), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, ForeColor = Success,
+            Location = new Point(20, 84), Size = new Size(0, 24), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, ForeColor = Success,
             Font = new Font("Segoe UI", 10F, FontStyle.Bold)
         };
         heroCard.Controls.Add(dashboardMode);
         var dashboardStatus = new Label
         {
             Name = "dashboardStatus", Text = "Your audio filter is currently stopped.",
-            AutoSize = false, Location = new Point(20, 78), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            AutoSize = false, Location = new Point(20, 108), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
         };
         heroCard.Controls.Add(dashboardStatus);
@@ -1363,7 +1369,7 @@ public sealed class MainForm : Form
             pageTitle.Text = navLabels[selectedPage];
             pageSubtitle.Text = selectedPage switch
             {
-                0 => "Monitor filtering status and recent activity.",
+                0 => "Your Voice Filtered for Snowflakes",
                 1 => "Manage your microphone, virtual-cable output, and volume.",
                 2 => "Configure blocked words, aliases, and replacement sounds.",
                 3 => "Manage soundboard phrases, aliases, and private playback.",
