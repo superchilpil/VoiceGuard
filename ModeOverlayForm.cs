@@ -88,7 +88,9 @@ internal sealed class ModeOverlayForm : Form
         if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => SetMode(mode))); return; }
         currentMode = mode ?? "LIVE";
-        modeColor = currentMode.Contains("BYPASS", StringComparison.OrdinalIgnoreCase) ? Color.Gold :
+        modeColor = currentMode.Contains("SPEECH TO TEXT", StringComparison.OrdinalIgnoreCase) ||
+            currentMode.Contains("DICTATION", StringComparison.OrdinalIgnoreCase) ? Color.DodgerBlue :
+            currentMode.Contains("BYPASS", StringComparison.OrdinalIgnoreCase) ? Color.Gold :
             currentMode.Contains("SOUNDBOARD", StringComparison.OrdinalIgnoreCase) ? Color.MediumPurple :
             currentMode.Contains("DRAIN", StringComparison.OrdinalIgnoreCase) || currentMode.Contains("ANALYZ", StringComparison.OrdinalIgnoreCase) || currentMode.Contains("DELAY", StringComparison.OrdinalIgnoreCase) ? Color.IndianRed :
             currentMode.Contains("STOP", StringComparison.OrdinalIgnoreCase) ? Color.Gray : Color.LimeGreen;
