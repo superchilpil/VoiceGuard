@@ -134,7 +134,6 @@ public sealed class VoiceToTextForm : Form
             waitingForSecondTap = false;
             FinishAndSend();
         };
-        Shown += (_, _) => RebuildHooks();
         FormClosing += (_, _) =>
         {
             closing = true;
@@ -146,6 +145,34 @@ public sealed class VoiceToTextForm : Form
             activationHook = null;
             escapeHook = null;
         };
+    }
+
+    public void StartHotkeys()
+    {
+        if (IsDisposed) return;
+        _ = Handle; // Create a native handle so callbacks can be marshaled while this form stays hidden.
+        RebuildHooks();
+    }
+
+    public void UpdateHotkeys(Keys newActivationKey, Keys newChatKey)
+    {
+        activationKey = newActivationKey;
+        chatKey = newChatKey;
+        if (IsHandleCreated && !IsDisposed)
+            RebuildHooks();
+    }
+
+    public void StopHotkeys()
+    {
+        if (closing) return;
+        closing = true;
+        stopOrCancelTimer.Stop();
+        if (recording || transcribingFinal || !string.IsNullOrEmpty(typedText))
+            CancelSession(false);
+        activationHook?.Dispose();
+        escapeHook?.Dispose();
+        activationHook = null;
+        escapeHook = null;
     }
 
     private void RebuildHooks()
@@ -162,8 +189,19 @@ public sealed class VoiceToTextForm : Form
             if (!down || closing) return;
             try { if (!IsDisposed) BeginInvoke(() => CancelSession(false, false)); } catch { }
         });
-        try { activationHook.Start(); escapeHook.Start(); }
-        catch (Exception ex) { statusLabel.Text = "Hotkey unavailable: " + ex.Message; }
+        try
+        {
+            activationHook.Start();
+            escapeHook.Start();
+        }
+        catch (Exception ex)
+        {
+            activationHook?.Dispose();
+            escapeHook?.Dispose();
+            activationHook = null;
+            escapeHook = null;
+            statusLabel.Text = "Hotkey unavailable: " + ex.Message;
+        }
     }
 
     private void HandleActivationPressed()
@@ -198,6 +236,16 @@ public sealed class VoiceToTextForm : Form
             return;
         }
 
+        // Verify that VoiceGuard is actually ready before touching game chat.
+        // Previously Enter was injected first, so a stopped engine could open
+        // chat and immediately cancel without ever starting dictation.
+        if (!startCapture())
+        {
+            targetWindow = IntPtr.Zero;
+            statusLabel.Text = "Could not start dictation. Start VoiceGuard and ensure Whisper is ready.";
+            return;
+        }
+
         try
         {
             EnsureTargetForeground();
@@ -206,17 +254,10 @@ public sealed class VoiceToTextForm : Form
         }
         catch (Exception ex)
         {
-            statusLabel.Text = "Could not open game chat: " + ex.Message;
+            cancelCapture();
             targetWindow = IntPtr.Zero;
-            return;
-        }
-
-        if (!startCapture())
-        {
-            if (targetChatOpened) { try { SendKey(Keys.Escape); } catch { } }
             targetChatOpened = false;
-            targetWindow = IntPtr.Zero;
-            statusLabel.Text = "Could not start dictation. Start VoiceGuard and ensure Whisper is ready.";
+            statusLabel.Text = "Could not open game chat: " + ex.Message;
             return;
         }
 
