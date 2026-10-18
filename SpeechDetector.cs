@@ -139,6 +139,8 @@ public sealed class SpeechDetector : IAsyncDisposable
             voiceToTextPcm.Clear();
             voiceToTextGeneration++;
         }
+        lock (workQueueSync)
+            workQueue.RemoveAll(window => window.IsVoiceToText);
         log("VOICE TO TEXT — pending capture/transcription canceled.");
     }
 
@@ -813,6 +815,8 @@ public sealed class SpeechDetector : IAsyncDisposable
         catch (Exception ex)
         {
             log("Speech recognition error: " + ex.Message);
+            if (window.IsVoiceToText && window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
+                voiceToTextFailed?.Invoke("Transcription failed: " + ex.Message);
             if (window.IsSoundboardListen)
             {
                 lock (sync)
