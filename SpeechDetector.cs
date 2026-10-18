@@ -803,8 +803,8 @@ public sealed class SpeechDetector : IAsyncDisposable
                 log($"Recognition window @ {window.AbsoluteStart:0.000}s produced no speech.");
                 if (listenOnly)
                     soundboardListenNoMatch?.Invoke();
-                if (voiceToTextOnly && window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
-                    voiceToTextFailed?.Invoke("Whisper did not recognize any speech. Try again a little closer to the microphone.");
+                if (voiceToTextOnly && window.IsVoiceToTextFinal && window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
+                    voiceToTextFailed?.Invoke("Whisper did not recognize any speech. Try a little closer to the microphone.");
                 return;
             }
 
@@ -848,7 +848,7 @@ public sealed class SpeechDetector : IAsyncDisposable
         catch (Exception ex)
         {
             log("Speech recognition error: " + ex.Message);
-            if (window.IsVoiceToText && window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
+            if (window.IsVoiceToText && window.IsVoiceToTextFinal && window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
                 voiceToTextFailed?.Invoke("Transcription failed: " + ex.Message);
             if (window.IsSoundboardListen)
             {
