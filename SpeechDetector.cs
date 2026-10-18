@@ -733,11 +733,14 @@ public sealed class SpeechDetector : IAsyncDisposable
             bool listenOnly = window.IsSoundboardListen;
             bool voiceToTextOnly = window.IsVoiceToText;
 
-            lock (audioWindowSync)
+            if (!voiceToTextOnly)
             {
-                recentAudioWindows.Add(window);
-                double cutoff = window.AbsoluteStart - 8.0;
-                recentAudioWindows.RemoveAll(x => x.AbsoluteStart + x.Duration < cutoff);
+                lock (audioWindowSync)
+                {
+                    recentAudioWindows.Add(window);
+                    double cutoff = window.AbsoluteStart - 8.0;
+                    recentAudioWindows.RemoveAll(x => x.AbsoluteStart + x.Duration < cutoff);
+                }
             }
 
             var vad = AnalyzeSpeechActivity(window.Pcm48k);
