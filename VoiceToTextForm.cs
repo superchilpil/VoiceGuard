@@ -9,7 +9,6 @@ namespace VoiceGuard;
 public sealed class VoiceToTextForm : Form
 {
     private static readonly Color Bg = Color.FromArgb(10, 7, 14);
-    private static readonly Color Surface = Color.FromArgb(18, 15, 25);
     private static readonly Color Surface2 = Color.FromArgb(24, 20, 34);
     private static readonly Color Border = Color.FromArgb(55, 43, 72);
     private static readonly Color Accent = Color.FromArgb(154, 78, 255);
@@ -21,39 +20,32 @@ public sealed class VoiceToTextForm : Form
     private readonly TextBox transcriptBox = new();
     private readonly Label statusLabel = new();
     private readonly Button actionButton = new();
-    private readonly Button sendButton = new();
     private readonly Button cancelButton = new();
     private readonly Func<bool> startCapture;
     private readonly Func<bool> stopCapture;
     private readonly Action cancelCapture;
     private readonly Action<Keys, Keys> saveKeys;
+    private readonly System.Windows.Forms.Timer stopOrCancelTimer = new() { Interval = 375 };
     private PttKeyHook? activationHook;
     private PttKeyHook? escapeHook;
     private Keys activationKey;
     private Keys chatKey;
     private bool recording;
-    private bool transcribing;
-    private IntPtr targetWindow;
-    private DateTime lastActivationPressUtc = DateTime.MinValue;
+    private bool transcribingFinal;
     private bool closing;
+    private IntPtr targetWindow;
+    private string typedText = "";
+    private bool waitingForSecondTap;
+    private bool targetChatOpened;
 
     private const uint INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_UNICODE = 0x0004;
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct INPUT
-    {
-        public uint type;
-        public InputUnion U;
-    }
-
+    private struct INPUT { public uint type; public InputUnion U; }
     [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)] public KEYBDINPUT ki;
-    }
-
+    private struct InputUnion { [FieldOffset(0)] public KEYBDINPUT ki; }
     [StructLayout(LayoutKind.Sequential)]
     private struct KEYBDINPUT
     {
@@ -68,13 +60,8 @@ public sealed class VoiceToTextForm : Form
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
-    public VoiceToTextForm(
-        Keys activationKey,
-        Keys chatKey,
-        Func<bool> startCapture,
-        Func<bool> stopCapture,
-        Action cancelCapture,
-        Action<Keys, Keys> saveKeys)
+    public VoiceToTextForm(Keys activationKey, Keys chatKey, Func<bool> startCapture, Func<bool> stopCapture,
+        Action cancelCapture, Action<Keys, Keys> saveKeys)
     {
         this.activationKey = activationKey;
         this.chatKey = chatKey;
@@ -88,31 +75,25 @@ public sealed class VoiceToTextForm : Form
         FormBorderStyle = FormBorderStyle.Sizable;
         MinimizeBox = true;
         MaximizeBox = false;
-        MinimumSize = new Size(560, 490);
-        ClientSize = new Size(650, 560);
+        MinimumSize = new Size(540, 360);
+        ClientSize = new Size(650, 400);
         BackColor = Bg;
         ForeColor = TextMain;
         Font = new Font("Segoe UI", 9F);
 
-        var title = new Label
-        {
-            Text = "VOICE-TO-TEXT",
-            AutoSize = true,
-            Location = new Point(22, 18),
-            ForeColor = TextMain,
-            Font = new Font("Segoe UI", 16F, FontStyle.Bold)
-        };
-        Controls.Add(title);
         Controls.Add(new Label
         {
-            Text = "Speak into your physical mic; local Whisper prepares a message for game chat.",
-            AutoSize = true,
-            Location = new Point(24, 52),
-            ForeColor = TextDim
+            Text = "LIVE GAME-CHAT DICTATION", AutoSize = true, Location = new Point(22, 18),
+            ForeColor = TextMain, Font = new Font("Segoe UI", 15F, FontStyle.Bold)
+        });
+        Controls.Add(new Label
+        {
+            Text = "Press the hotkey to open chat and dictate. Press once to send, or double-tap to cancel.",
+            AutoSize = true, Location = new Point(24, 51), ForeColor = TextDim
         });
 
-        Controls.Add(new Label { Text = "Activation key", AutoSize = true, Location = new Point(24, 91), ForeColor = TextDim });
-        activationKeyBox.SetBounds(24, 113, 150, 32);
+        Controls.Add(new Label { Text = "Dictation hotkey", AutoSize = true, Location = new Point(24, 83), ForeColor = TextDim });
+        activationKeyBox.SetBounds(24, 105, 150, 30);
         activationKeyBox.ReadOnly = true;
         activationKeyBox.TextAlign = HorizontalAlignment.Center;
         StyleInput(activationKeyBox);
@@ -127,8 +108,8 @@ public sealed class VoiceToTextForm : Form
         };
         Controls.Add(activationKeyBox);
 
-        Controls.Add(new Label { Text = "Chat-open key", AutoSize = true, Location = new Point(194, 91), ForeColor = TextDim });
-        chatKeyBox.SetBounds(194, 113, 150, 32);
+        Controls.Add(new Label { Text = "Chat-open key", AutoSize = true, Location = new Point(194, 83), ForeColor = TextDim });
+        chatKeyBox.SetBounds(194, 105, 150, 30);
         chatKeyBox.ReadOnly = true;
         chatKeyBox.TextAlign = HorizontalAlignment.Center;
         StyleInput(chatKeyBox);
@@ -143,122 +124,64 @@ public sealed class VoiceToTextForm : Form
         };
         Controls.Add(chatKeyBox);
 
-        var hint = new Label
-        {
-            Text = "Hotkey: press once to record, again to transcribe, then again to confirm and send. Escape cancels. A quick double-tap while recording cancels.",
-            Location = new Point(24, 157),
-            Size = new Size(590, 42),
-            ForeColor = TextDim
-        };
-        Controls.Add(hint);
-
-        statusLabel.SetBounds(24, 205, 590, 34);
-        statusLabel.Text = "Ready — start VoiceGuard first.";
+        statusLabel.SetBounds(24, 151, 590, 42);
+        statusLabel.Text = "Ready — start VoiceGuard and load Whisper first.";
         statusLabel.ForeColor = Accent;
         statusLabel.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
         Controls.Add(statusLabel);
 
-        transcriptBox.SetBounds(24, 246, 590, 190);
+        transcriptBox.SetBounds(24, 201, 590, 105);
         transcriptBox.Multiline = true;
+        transcriptBox.ReadOnly = true;
         transcriptBox.ScrollBars = ScrollBars.Vertical;
-        transcriptBox.AcceptsReturn = true;
         transcriptBox.WordWrap = true;
-        transcriptBox.Font = new Font("Segoe UI", 11F);
+        transcriptBox.Font = new Font("Segoe UI", 10.5F);
         transcriptBox.BackColor = Surface2;
         transcriptBox.ForeColor = TextMain;
         transcriptBox.BorderStyle = BorderStyle.FixedSingle;
         Controls.Add(transcriptBox);
 
-        actionButton.Text = "Start Listening";
-        actionButton.SetBounds(24, 454, 170, 40);
+        actionButton.Text = "Start Dictation";
+        actionButton.SetBounds(24, 322, 190, 40);
         StyleButton(actionButton, true);
         actionButton.Click += (_, _) => HandleActivationPressed();
         Controls.Add(actionButton);
 
-        sendButton.Text = "Send to Game Chat";
-        sendButton.SetBounds(204, 454, 190, 40);
-        StyleButton(sendButton, true);
-        sendButton.Enabled = false;
-        sendButton.Click += (_, _) => SendPendingText();
-        Controls.Add(sendButton);
-
         cancelButton.Text = "Cancel / Clear";
-        cancelButton.SetBounds(404, 454, 150, 40);
+        cancelButton.SetBounds(224, 322, 150, 40);
         StyleButton(cancelButton, false);
-        cancelButton.Click += (_, _) => CancelSession();
+        cancelButton.Click += (_, _) => CancelSession(true);
         Controls.Add(cancelButton);
-
-        Controls.Add(new Label
-        {
-            Text = "VoiceGuard must be running. Voice-to-text records privately and never transmits audio.",
-            AutoSize = true,
-            Location = new Point(24, 516),
-            ForeColor = TextDim
-        });
 
         Resize += (_, _) =>
         {
             int width = Math.Max(300, ClientSize.Width - 48);
-            hint.Width = width;
             statusLabel.Width = width;
             transcriptBox.Width = width;
-            transcriptBox.Height = Math.Max(100, ClientSize.Height - 370);
-            sendButton.Left = Math.Max(204, ClientSize.Width - 24 - sendButton.Width - cancelButton.Width - 10);
-            cancelButton.Left = ClientSize.Width - 24 - cancelButton.Width;
-            actionButton.Top = transcriptBox.Bottom + 18;
-            sendButton.Top = actionButton.Top;
+            transcriptBox.Height = Math.Max(70, ClientSize.Height - 295);
+            actionButton.Top = transcriptBox.Bottom + 16;
             cancelButton.Top = actionButton.Top;
+            cancelButton.Left = actionButton.Right + 10;
         };
 
+        stopOrCancelTimer.Tick += (_, _) =>
+        {
+            stopOrCancelTimer.Stop();
+            waitingForSecondTap = false;
+            FinishAndSend();
+        };
         Shown += (_, _) => RebuildHooks();
         FormClosing += (_, _) =>
         {
             closing = true;
-            if (recording || transcribing || transcriptBox.TextLength > 0)
-                cancelCapture();
-            recording = false;
-            transcribing = false;
+            stopOrCancelTimer.Stop();
+            if (recording || transcribingFinal || !string.IsNullOrEmpty(typedText))
+                CancelSession(false);
             activationHook?.Dispose();
             escapeHook?.Dispose();
             activationHook = null;
             escapeHook = null;
         };
-    }
-
-    public void OnTranscriptionReady(string text)
-    {
-        if (IsDisposed || closing) return;
-        transcribing = false;
-        transcriptBox.Text = text;
-        sendButton.Enabled = !string.IsNullOrWhiteSpace(text);
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            statusLabel.Text = "No speech recognized. Try again.";
-            actionButton.Text = "Start Listening";
-        }
-        else
-        {
-            statusLabel.Text = "Review the text. Press the activation key again to confirm/send.";
-            actionButton.Text = "Confirm & Send";
-        }
-    }
-
-    public void OnTranscriptionFailed(string error)
-    {
-        if (IsDisposed || closing) return;
-        transcribing = false;
-        recording = false;
-        statusLabel.Text = error;
-        actionButton.Text = "Start Listening";
-        sendButton.Enabled = transcriptBox.TextLength > 0;
-    }
-
-    public void OnEngineStopped()
-    {
-        if (recording || transcribing || transcriptBox.TextLength > 0)
-            CancelSession();
-        statusLabel.Text = "VoiceGuard stopped — start it before dictating.";
-        actionButton.Text = "Start Listening";
     }
 
     private void RebuildHooks()
@@ -273,129 +196,219 @@ public sealed class VoiceToTextForm : Form
         escapeHook = new PttKeyHook(Keys.Escape, down =>
         {
             if (!down || closing) return;
-            try { if (!IsDisposed) BeginInvoke(() => CancelSession()); } catch { }
+            try { if (!IsDisposed) BeginInvoke(() => CancelSession(true)); } catch { }
         });
-        try
-        {
-            activationHook.Start();
-            escapeHook.Start();
-        }
-        catch (Exception ex)
-        {
-            statusLabel.Text = "Hotkey unavailable: " + ex.Message;
-        }
+        try { activationHook.Start(); escapeHook.Start(); }
+        catch (Exception ex) { statusLabel.Text = "Hotkey unavailable: " + ex.Message; }
     }
 
     private void HandleActivationPressed()
     {
         if (closing || IsDisposed) return;
-        var now = DateTime.UtcNow;
-        if (recording && (now - lastActivationPressUtc).TotalMilliseconds <= 400)
-        {
-            lastActivationPressUtc = now;
-            CancelSession();
-            statusLabel.Text = "Recording canceled by double-tap.";
-            return;
-        }
-        lastActivationPressUtc = now;
 
         if (recording)
         {
-            recording = false;
-            transcribing = true;
-            actionButton.Text = "Transcribing...";
-            actionButton.Enabled = false;
-            statusLabel.Text = "Transcribing locally with Whisper...";
-            bool queued = stopCapture();
-            actionButton.Enabled = true;
-            if (!queued)
+            // Defer the stop/send action briefly so a double-tap can cancel instead.
+            if (waitingForSecondTap)
             {
-                transcribing = false;
-                actionButton.Text = "Start Listening";
-                statusLabel.Text = "No usable audio captured. Try again.";
+                stopOrCancelTimer.Stop();
+                waitingForSecondTap = false;
+                CancelSession(true);
+                statusLabel.Text = "Canceled — typed text cleared and chat closed.";
+                return;
             }
+
+            waitingForSecondTap = true;
+            statusLabel.Text = "Finishing dictation… tap again quickly to cancel.";
+            stopOrCancelTimer.Start();
             return;
         }
 
-        if (transcribing) return;
-
-        if (!string.IsNullOrWhiteSpace(transcriptBox.Text))
-        {
-            SendPendingText();
-            return;
-        }
+        if (transcribingFinal) return;
 
         targetWindow = GetForegroundWindow();
-        if (!startCapture())
+        if (targetWindow == IntPtr.Zero || targetWindow == Handle)
         {
-            statusLabel.Text = "Could not start. Start VoiceGuard and ensure it is idle.";
-            return;
-        }
-        recording = true;
-        transcriptBox.Clear();
-        sendButton.Enabled = false;
-        actionButton.Text = "Finish & Transcribe";
-        statusLabel.Text = "Listening — speak, then press the activation key again.";
-    }
-
-    private void CancelSession()
-    {
-        if (recording || transcribing)
-            cancelCapture();
-        recording = false;
-        transcribing = false;
-        transcriptBox.Clear();
-        sendButton.Enabled = false;
-        targetWindow = IntPtr.Zero;
-        actionButton.Enabled = true;
-        actionButton.Text = "Start Listening";
-        statusLabel.Text = "Canceled. Nothing was sent.";
-    }
-
-    private void SendPendingText()
-    {
-        string text = transcriptBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            statusLabel.Text = "There is no text to send.";
-            return;
-        }
-
-        IntPtr target = targetWindow != IntPtr.Zero ? targetWindow : GetForegroundWindow();
-        if (target == Handle)
-        {
-            statusLabel.Text = "Return to the game and start a new dictation there.";
+            statusLabel.Text = "Activate your game first, then press the dictation hotkey.";
+            targetWindow = IntPtr.Zero;
             return;
         }
 
         try
         {
-            if (GetForegroundWindow() != target && !SetForegroundWindow(target))
-            {
-                statusLabel.Text = "Could not focus the game window. Activate the game and try sending again.";
-                return;
-            }
-            Thread.Sleep(150);
-            if (GetForegroundWindow() != target)
-            {
-                statusLabel.Text = "The game did not regain focus. Nothing was sent.";
-                return;
-            }
+            EnsureTargetForeground();
             SendKey(chatKey);
-            Thread.Sleep(120);
-            SendUnicodeText(text);
-            Thread.Sleep(80);
-            SendKey(Keys.Enter);
-            transcriptBox.Clear();
-            sendButton.Enabled = false;
-            targetWindow = IntPtr.Zero;
-            actionButton.Text = "Start Listening";
-            statusLabel.Text = "Confirmed and sent to game chat.";
+            targetChatOpened = true;
         }
         catch (Exception ex)
         {
-            statusLabel.Text = "Could not send text: " + ex.Message;
+            statusLabel.Text = "Could not open game chat: " + ex.Message;
+            targetWindow = IntPtr.Zero;
+            return;
         }
+
+        if (!startCapture())
+        {
+            if (targetChatOpened) { try { SendKey(Keys.Escape); } catch { } }
+            targetChatOpened = false;
+            targetWindow = IntPtr.Zero;
+            statusLabel.Text = "Could not start dictation. Start VoiceGuard and ensure Whisper is ready.";
+            return;
+        }
+
+        typedText = "";
+        transcriptBox.Clear();
+        recording = true;
+        statusLabel.Text = "Listening and typing live into game chat… press once to send or double-tap to cancel.";
+        actionButton.Text = "Finish & Send";
+    }
+
+    private void FinishAndSend()
+    {
+        if (!recording) return;
+        recording = false;
+        transcribingFinal = true;
+        statusLabel.Text = "Finalizing speech recognition…";
+        actionButton.Enabled = false;
+        bool queued = stopCapture();
+        if (!queued)
+        {
+            transcribingFinal = false;
+            actionButton.Enabled = true;
+            CancelSession(true);
+            statusLabel.Text = "No usable speech captured; chat was canceled.";
+        }
+    }
+
+    public void OnLiveTranscription(string text)
+    {
+        if (IsDisposed || closing || !recording || string.IsNullOrWhiteSpace(text)) return;
+        try
+        {
+            EnsureTargetForeground();
+            ReplaceTypedText(text.Trim());
+            statusLabel.Text = "Live dictation — press once to send or double-tap to cancel.";
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = "Could not update game chat: " + ex.Message;
+        }
+    }
+
+    public void OnTranscriptionReady(string text)
+    {
+        if (IsDisposed || closing) return;
+        if (!transcribingFinal) return;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                EnsureTargetForeground();
+                ReplaceTypedText(text.Trim());
+            }
+
+            if (string.IsNullOrWhiteSpace(typedText))
+            {
+                statusLabel.Text = "No speech recognized; chat was canceled.";
+                CancelSession(true);
+                return;
+            }
+
+            EnsureTargetForeground();
+            SendKey(Keys.Enter);
+            targetChatOpened = false;
+            targetWindow = IntPtr.Zero;
+            typedText = "";
+            transcriptBox.Text = text;
+            transcribingFinal = false;
+            actionButton.Enabled = true;
+            actionButton.Text = "Start Dictation";
+            statusLabel.Text = "Message sent.";
+        }
+        catch (Exception ex)
+        {
+            transcribingFinal = false;
+            actionButton.Enabled = true;
+            statusLabel.Text = "Could not send message: " + ex.Message + " — text may still be in chat.";
+        }
+    }
+
+    public void OnTranscriptionFailed(string error)
+    {
+        if (IsDisposed || closing) return;
+        transcribingFinal = false;
+        recording = false;
+        actionButton.Enabled = true;
+        actionButton.Text = "Start Dictation";
+        statusLabel.Text = error + " Chat canceled for safety.";
+        CancelSession(true);
+    }
+
+    public void OnEngineStopped()
+    {
+        if (recording || transcribingFinal || !string.IsNullOrEmpty(typedText))
+            CancelSession(true);
+        statusLabel.Text = "VoiceGuard stopped — start it before dictating.";
+        actionButton.Text = "Start Dictation";
+    }
+
+    private void ReplaceTypedText(string newText)
+    {
+        int common = 0;
+        while (common < typedText.Length && common < newText.Length && typedText[common] == newText[common])
+            common++;
+
+        int removeCount = typedText.Length - common;
+        if (removeCount > 0)
+        {
+            for (int i = 0; i < removeCount; i++) SendKey(Keys.Back);
+        }
+
+        string suffix = newText.Substring(common);
+        if (suffix.Length > 0) SendUnicodeText(suffix);
+        typedText = newText;
+        transcriptBox.Text = typedText;
+        transcriptBox.SelectionStart = transcriptBox.TextLength;
+        transcriptBox.ScrollToCaret();
+    }
+
+    private void CancelSession(bool closeGameChat)
+    {
+        stopOrCancelTimer.Stop();
+        waitingForSecondTap = false;
+        if (recording || transcribingFinal) cancelCapture();
+        recording = false;
+        transcribingFinal = false;
+        actionButton.Enabled = true;
+        actionButton.Text = "Start Dictation";
+
+        try
+        {
+            if (targetWindow != IntPtr.Zero)
+            {
+                EnsureTargetForeground();
+                if (typedText.Length > 0)
+                    for (int i = 0; i < typedText.Length; i++) SendKey(Keys.Back);
+                if (closeGameChat && targetChatOpened) SendKey(Keys.Escape);
+            }
+        }
+        catch { /* Never send text on cancel; best-effort clear and close. */ }
+
+        typedText = "";
+        transcriptBox.Clear();
+        targetWindow = IntPtr.Zero;
+        targetChatOpened = false;
+        if (!closing) statusLabel.Text = "Canceled. Nothing was sent.";
+    }
+
+    private void EnsureTargetForeground()
+    {
+        if (targetWindow == IntPtr.Zero) throw new InvalidOperationException("Game window is unavailable.");
+        if (GetForegroundWindow() != targetWindow && !SetForegroundWindow(targetWindow))
+            throw new InvalidOperationException("Could not focus the game window.");
+        Thread.Sleep(50);
+        if (GetForegroundWindow() != targetWindow)
+            throw new InvalidOperationException("The game did not regain focus.");
     }
 
     private static void SendKey(Keys key)
@@ -407,7 +420,7 @@ public sealed class VoiceToTextForm : Form
             new INPUT { type = INPUT_KEYBOARD, U = new InputUnion { ki = new KEYBDINPUT { wVk = vk, dwFlags = KEYEVENTF_KEYUP } } }
         ];
         if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
-            throw new InvalidOperationException("Windows did not accept the chat key.");
+            throw new InvalidOperationException("Windows did not accept the key input.");
     }
 
     private static void SendUnicodeText(string text)
@@ -420,7 +433,7 @@ public sealed class VoiceToTextForm : Form
                 new INPUT { type = INPUT_KEYBOARD, U = new InputUnion { ki = new KEYBDINPUT { wScan = ch, dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP } } }
             ];
             if (SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>()) != inputs.Length)
-                throw new InvalidOperationException("Windows did not accept the chat text.");
+                throw new InvalidOperationException("Windows did not accept the dictated text.");
         }
     }
 
