@@ -62,6 +62,86 @@ public sealed class SpeechDetector : IAsyncDisposable
 
     public bool IsReady => processor != null;
 
+    public bool IsVoiceToTextActive
+    {
+        get { lock (sync) return voiceToTextActive; }
+    }
+
+    public void SetVoiceToTextCallbacks(Action<string>? recognized, Action<string>? failed = null)
+    {
+        voiceToTextRecognized = recognized;
+        voiceToTextFailed = failed;
+    }
+
+    public bool StartVoiceToText(double absoluteStartSeconds)
+    {
+        if (!IsReady) return false;
+        lock (sync)
+        {
+            voiceToTextPcm.Clear();
+            voiceToTextStartSeconds = Math.Max(0, absoluteStartSeconds);
+            voiceToTextGeneration++;
+            voiceToTextActive = true;
+        }
+        log("VOICE TO TEXT — recording started (20-second maximum).");
+        return true;
+    }
+
+    public void AddVoiceToTextPcm(byte[] pcm, int count, double absoluteStartSeconds)
+    {
+        if (count <= 0) return;
+        lock (sync)
+        {
+            if (!voiceToTextActive) return;
+            int remaining = MaxVoiceToTextBytes - voiceToTextPcm.Count;
+            if (remaining <= 0) return;
+            int appendCount = Math.Min(count, remaining);
+            appendCount -= appendCount % 2;
+            if (appendCount > 0)
+                voiceToTextPcm.AddRange(pcm.AsSpan(0, appendCount).ToArray());
+        }
+    }
+
+    public bool StopVoiceToText()
+    {
+        byte[] pcm;
+        double start;
+        int generation;
+        lock (sync)
+        {
+            if (!voiceToTextActive) return false;
+            voiceToTextActive = false;
+            pcm = voiceToTextPcm.ToArray();
+            voiceToTextPcm.Clear();
+            start = voiceToTextStartSeconds;
+            generation = voiceToTextGeneration;
+        }
+
+        if (pcm.Length < BytesPerSecond / 4)
+        {
+            voiceToTextFailed?.Invoke("Not enough audio was captured. Try speaking for a little longer.");
+            return false;
+        }
+
+        var window = new RecognitionWindow(pcm, start, pcm.Length / (double)BytesPerSecond, 0, false, true, generation);
+        lock (workQueueSync)
+            workQueue.Add(window);
+        queueSignal.Release();
+        log($"VOICE TO TEXT — recording stopped; queued {window.Duration:0.0}s for transcription.");
+        return true;
+    }
+
+    public void CancelVoiceToText()
+    {
+        lock (sync)
+        {
+            voiceToTextActive = false;
+            voiceToTextPcm.Clear();
+            voiceToTextGeneration++;
+        }
+        log("VOICE TO TEXT — pending capture/transcription canceled.");
+    }
+
     public double CompletedThroughSeconds => BitConverter.Int64BitsToDouble(Interlocked.Read(ref completedThroughBits));
 
     public bool HasPendingAnalysis
@@ -85,6 +165,14 @@ public sealed class SpeechDetector : IAsyncDisposable
     private readonly Dictionary<string, string> soundboardAliases = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, double> lastSoundboardTrigger = new(StringComparer.OrdinalIgnoreCase);
     private Func<double>? outputCursorSeconds;
+
+    private readonly List<byte> voiceToTextPcm = new();
+    private bool voiceToTextActive;
+    private double voiceToTextStartSeconds;
+    private int voiceToTextGeneration;
+    private Action<string>? voiceToTextRecognized;
+    private Action<string>? voiceToTextFailed;
+    private const int MaxVoiceToTextBytes = BytesPerSecond * 20;
 
     public SpeechDetector(IEnumerable<string> words, Action<string> log, Func<double>? outputCursorSeconds = null)
     {
@@ -594,17 +682,19 @@ public sealed class SpeechDetector : IAsyncDisposable
                         if (workQueue.Count == 0)
                             break;
 
-                        int newestIndex = 0;
-                        double newestStart = workQueue[0].AbsoluteStart;
-
-                        for (int i = 1; i < workQueue.Count; i++)
+                        // Prioritize censor/filter work over user-requested dictation.
+                        int newestIndex = -1;
+                        double newestStart = double.NegativeInfinity;
+                        for (int i = 0; i < workQueue.Count; i++)
                         {
+                            if (workQueue[i].IsVoiceToText) continue;
                             if (workQueue[i].AbsoluteStart > newestStart)
                             {
                                 newestStart = workQueue[i].AbsoluteStart;
                                 newestIndex = i;
                             }
                         }
+                        if (newestIndex < 0) newestIndex = 0;
 
                         window = workQueue[newestIndex];
                         workQueue.RemoveAt(newestIndex);
@@ -638,6 +728,7 @@ public sealed class SpeechDetector : IAsyncDisposable
             using var wav = Build16kMonoWav(window.Pcm48k);
             wav.Position = 0;
             bool listenOnly = window.IsSoundboardListen;
+            bool voiceToTextOnly = window.IsVoiceToText;
 
             lock (audioWindowSync)
             {
@@ -648,7 +739,7 @@ public sealed class SpeechDetector : IAsyncDisposable
 
             var vad = AnalyzeSpeechActivity(window.Pcm48k);
 
-            if (!vad.IsSpeech && !listenOnly)
+            if (!vad.IsSpeech && !listenOnly && !voiceToTextOnly)
             {
                 log(
                     $"VAD @ {window.AbsoluteStart:0.000}s: " +
@@ -683,6 +774,17 @@ public sealed class SpeechDetector : IAsyncDisposable
                 log($"Recognition window @ {window.AbsoluteStart:0.000}s produced no speech.");
                 if (listenOnly)
                     soundboardListenNoMatch?.Invoke();
+                if (voiceToTextOnly && window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
+                    voiceToTextFailed?.Invoke("Whisper did not recognize any speech. Try again a little closer to the microphone.");
+                return;
+            }
+
+            if (voiceToTextOnly)
+            {
+                foreach (var phrase in recognized)
+                    log($"VOICE TO TEXT HEARD: {phrase}");
+                if (window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
+                    voiceToTextRecognized?.Invoke(string.Join(" ", recognized).Trim());
                 return;
             }
 
@@ -726,25 +828,27 @@ public sealed class SpeechDetector : IAsyncDisposable
             // A window is considered safe only after VAD/Whisper processing has
             // completely finished. The audio engine uses this watermark to keep
             // the delayed output from outrunning analysis.
-            double completed = window.AbsoluteStart + window.Duration;
-            long bits = BitConverter.DoubleToInt64Bits(completed);
-            long prior = Interlocked.Read(ref completedThroughBits);
-            while (completed > BitConverter.Int64BitsToDouble(prior))
+            if (!window.IsVoiceToText)
             {
-                long observed = Interlocked.CompareExchange(ref completedThroughBits, bits, prior);
-                if (observed == prior) break;
-                prior = observed;
-            }
-            Interlocked.Decrement(ref activeRecognitions);
-
-            lock (sync)
-            {
-                if (segmentPending.TryGetValue(window.SegmentId, out var pending))
+                double completed = window.AbsoluteStart + window.Duration;
+                long bits = BitConverter.DoubleToInt64Bits(completed);
+                long prior = Interlocked.Read(ref completedThroughBits);
+                while (completed > BitConverter.Int64BitsToDouble(prior))
                 {
-                    segmentPending[window.SegmentId] = Math.Max(0, pending - 1);
-                    TryAdvanceAnalysisWatermark_NoLock(window.SegmentId);
+                    long observed = Interlocked.CompareExchange(ref completedThroughBits, bits, prior);
+                    if (observed == prior) break;
+                    prior = observed;
+                }
+                lock (sync)
+                {
+                    if (segmentPending.TryGetValue(window.SegmentId, out var pending))
+                    {
+                        segmentPending[window.SegmentId] = Math.Max(0, pending - 1);
+                        TryAdvanceAnalysisWatermark_NoLock(window.SegmentId);
+                    }
                 }
             }
+            Interlocked.Decrement(ref activeRecognitions);
         }
     }
 
@@ -1435,6 +1539,12 @@ public sealed class SpeechDetector : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         cts.Cancel();
+        lock (sync)
+        {
+            voiceToTextActive = false;
+            voiceToTextPcm.Clear();
+            voiceToTextGeneration++;
+        }
         soundboardListenTimeoutCts?.Cancel();
         soundboardListenTimeoutCts?.Dispose();
         soundboardListenTimeoutCts = null;
@@ -1465,5 +1575,5 @@ public sealed class SpeechDetector : IAsyncDisposable
         factory = null;
     }
 
-    private sealed record RecognitionWindow(byte[] Pcm48k, double AbsoluteStart, double Duration, long SegmentId, bool IsSoundboardListen = false);
+    private sealed record RecognitionWindow(byte[] Pcm48k, double AbsoluteStart, double Duration, long SegmentId, bool IsSoundboardListen = false, bool IsVoiceToText = false, int VoiceToTextGeneration = 0);
 }

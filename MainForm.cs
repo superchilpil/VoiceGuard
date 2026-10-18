@@ -54,6 +54,9 @@ public sealed class MainForm : Form
     private readonly Button listenSoundboard = new();
     private bool soundboardListenInProgress;
     private readonly TextBox soundboardListenKey = new();
+    private VoiceToTextForm? voiceToTextForm;
+    private Keys voiceToTextActivationKey = Keys.F8;
+    private Keys voiceToTextChatKey = Keys.Enter;
     private Thread? soundboardListenKeyThread;
     private CancellationTokenSource? soundboardListenKeyCts;
     private int soundboardListenVirtualKey = (int)Keys.OemPeriod;
@@ -181,6 +184,8 @@ public sealed class MainForm : Form
         public string OverlayStyle { get; set; } = "Text";
         public string StartStopHotkey { get; set; } = "Control, Alt, V";
         public string VoiceGuardTriggerKey { get; set; } = Keys.Oemcomma.ToString();
+        public string VoiceToTextActivationKey { get; set; } = Keys.F8.ToString();
+        public string VoiceToTextChatKey { get; set; } = Keys.Enter.ToString();
     }
 
     private sealed class SoundboardEntryConfig
@@ -857,7 +862,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 800), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 850), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -956,7 +961,14 @@ public sealed class MainForm : Form
         var settingsBrand = new PictureBox { Location = new Point(22, 708), Size = new Size(220, 70), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent, Padding = new Padding(32, 8, 32, 8) };
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
-        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 732), ForeColor = TextDim });
+        settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 774), ForeColor = TextDim });
+        var voiceToTextButton = new Button { Text = "Open Voice-to-Text (experimental)  →", Location = new Point(22, 690), Size = new Size(490, 38) };
+        StyleButton(voiceToTextButton, true);
+        ApplyRoundedButton(voiceToTextButton, 10);
+        voiceToTextButton.Click += (_, _) => OpenVoiceToTextForm();
+        settingsCard.Controls.Add(voiceToTextButton);
+        settingsBrand.Location = new Point(22, 750);
+        settingsCard.Height = 850;
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
@@ -1829,6 +1841,10 @@ public sealed class MainForm : Form
                 voiceGuardTriggerVirtualKey = (int)savedTriggerKey;
                 voiceGuardTriggerKeyBox.Text = DisplayKey(savedTriggerKey);
             }
+            if (Enum.TryParse<Keys>(config.VoiceToTextActivationKey, true, out var savedVoiceToTextKey) && savedVoiceToTextKey != Keys.Escape)
+                voiceToTextActivationKey = savedVoiceToTextKey;
+            if (Enum.TryParse<Keys>(config.VoiceToTextChatKey, true, out var savedChatKey) && savedChatKey != Keys.Escape)
+                voiceToTextChatKey = savedChatKey;
 
             startWithWindows.Checked = config.StartWithWindows;
             minimizeToTray.Checked = config.MinimizeToTray;
@@ -1896,7 +1912,9 @@ public sealed class MainForm : Form
                 OverlayPosition = overlayPosition,
                 OverlayStyle = overlayStyle,
                 StartStopHotkey = FormatHotkeyForConfig(startStopHotkey.Tag is Keys startStopKey ? startStopKey : Keys.Control | Keys.Alt | Keys.V),
-                VoiceGuardTriggerKey = (voiceGuardTriggerKeyBox.Tag is Keys triggerKey ? triggerKey : Keys.Oemcomma).ToString()
+                VoiceGuardTriggerKey = (voiceGuardTriggerKeyBox.Tag is Keys triggerKey ? triggerKey : Keys.Oemcomma).ToString(),
+                VoiceToTextActivationKey = voiceToTextActivationKey.ToString(),
+                VoiceToTextChatKey = voiceToTextChatKey.ToString()
             };
 
             var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
@@ -3345,6 +3363,9 @@ public sealed class MainForm : Form
         }
 
         detector.SetWords(GetWords());
+        detector.SetVoiceToTextCallbacks(
+            text => { try { if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnTranscriptionReady(text)); } catch { } },
+            error => { try { if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnTranscriptionFailed(error)); } catch { } });
         SyncAliasesToDetector();
         detector.SetSoundboardPhrases(soundboardSounds.Keys);
             detector.SetSoundboardAliases(BuildSoundboardAliasMap());
@@ -3391,7 +3412,8 @@ public sealed class MainForm : Form
                 GetReplacementVolume,
                 () => outputVolume.Value / 100.0,
                 GetSoundboardSound,
-                GetSoundboardVolume);
+                GetSoundboardVolume,
+                (pcm, count, absoluteStartSeconds) => detector.AddVoiceToTextPcm(pcm, count, absoluteStartSeconds));
 
             detector.SetOutputCursorProvider(() => newEngine.CurrentSourceSeconds);
 
@@ -3859,8 +3881,64 @@ public sealed class MainForm : Form
         status.Text = text;
     }
 
+
+    private void OpenVoiceToTextForm()
+    {
+        if (voiceToTextForm == null || voiceToTextForm.IsDisposed)
+        {
+            voiceToTextForm = new VoiceToTextForm(
+                voiceToTextActivationKey,
+                voiceToTextChatKey,
+                BeginVoiceToTextCapture,
+                EndVoiceToTextCapture,
+                CancelVoiceToTextCapture,
+                (activationKey, chatKey) =>
+                {
+                    voiceToTextActivationKey = activationKey;
+                    voiceToTextChatKey = chatKey;
+                    SavePersistence();
+                });
+            voiceToTextForm.FormClosed += (_, _) => voiceToTextForm = null;
+        }
+        voiceToTextForm.Show(this);
+        voiceToTextForm.BringToFront();
+        voiceToTextForm.Activate();
+    }
+
+    private bool BeginVoiceToTextCapture()
+    {
+        if (engine == null || detector == null || !detector.IsReady)
+            return false;
+
+        if (!detector.StartVoiceToText(engine.CapturePcmSeconds))
+            return false;
+
+        if (!engine.SetVoiceToTextListening(true))
+        {
+            detector.CancelVoiceToText();
+            return false;
+        }
+
+        AddLog("VOICE TO TEXT — listening on the physical microphone; live passthrough unchanged.");
+        return true;
+    }
+
+    private bool EndVoiceToTextCapture()
+    {
+        engine?.SetVoiceToTextListening(false);
+        return detector?.StopVoiceToText() ?? false;
+    }
+
+    private void CancelVoiceToTextCapture()
+    {
+        engine?.SetVoiceToTextListening(false);
+        detector?.CancelVoiceToText();
+    }
+
     private void StopEngine()
     {
+        voiceToTextForm?.OnEngineStopped();
+        voiceToTextForm?.OnEngineStopped();
         try { soundboardPlaybackCts?.Cancel(); } catch { }
         soundboardPlaybackCts?.Dispose();
         soundboardPlaybackCts = null;

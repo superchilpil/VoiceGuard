@@ -16,6 +16,7 @@ public sealed class AudioEngine : IDisposable
     private readonly Action<string> status;
     private readonly Action<string> log;
     private readonly Action<byte[], int, double> analysisAudio;
+    private readonly Action<byte[], int, double>? voiceToTextAudio;
     private readonly Action<double>? analysisSegmentStart;
     private readonly Action<double>? analysisSegmentEnd;
     private readonly Func<double>? analysisCompletedSeconds;
@@ -43,6 +44,7 @@ public sealed class AudioEngine : IDisposable
     private double drainTargetSeconds;
     private bool stopped;
     private bool soundboardListening;
+    private bool voiceToTextListening;
     private bool soundboardPlaybackActive;
     private long capturePackets;
     private long captureBytes;
@@ -63,7 +65,8 @@ public sealed class AudioEngine : IDisposable
         Func<string, ReplacementPlaybackSettings>? replacementPlaybackResolver = null,
         Func<string, double>? replacementVolumeResolver = null,
         Func<double>? outputVolumeResolver = null, Func<string, string?>? soundboardSoundResolver = null,
-        Func<string, double>? soundboardVolumeResolver = null)
+        Func<string, double>? soundboardVolumeResolver = null,
+        Action<byte[], int, double>? voiceToTextAudio = null)
     {
         this.inputDevice = inputDevice; this.outputDevice = outputDevice; this.delaySeconds = delaySeconds;
         this.status = status; this.analysisAudio = analysisAudio;
@@ -76,7 +79,24 @@ public sealed class AudioEngine : IDisposable
         this.outputVolumeResolver = outputVolumeResolver;
         this.soundboardSoundResolver = soundboardSoundResolver;
         this.soundboardVolumeResolver = soundboardVolumeResolver;
+        this.voiceToTextAudio = voiceToTextAudio;
         this.log = logCallback ?? (_ => { });
+    }
+
+    public bool SetVoiceToTextListening(bool enabled)
+    {
+        lock (stateLock)
+        {
+            if (stopped) return false;
+            if (!enabled)
+            {
+                voiceToTextListening = false;
+                return true;
+            }
+            if (ptt || delayedMode || soundboardListening) return false;
+            voiceToTextListening = true;
+            return true;
+        }
     }
 
     public double CurrentSourceSeconds => switcher?.CurrentSourceSeconds ?? 0.0;
@@ -225,7 +245,15 @@ public sealed class AudioEngine : IDisposable
             }
             else
             {
-                // Normal PTT-off operation: pass the microphone through live.
+                // Voice-to-text taps the same physical-microphone capture stream
+                // while idle. It never enters the delayed audio path or changes
+                // the normal live passthrough.
+                if (voiceToTextListening && voiceToTextAudio != null)
+                {
+                    var copy = new byte[e.BytesRecorded];
+                    Buffer.BlockCopy(e.Buffer, 0, copy, 0, e.BytesRecorded);
+                    voiceToTextAudio(copy, copy.Length, packetStartSeconds);
+                }
                 switcher?.AddLiveSamples(e.Buffer, 0, e.BytesRecorded);
             }
         }
