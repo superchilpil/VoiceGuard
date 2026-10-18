@@ -61,6 +61,10 @@ public sealed class MainForm : Form
     private CancellationTokenSource? soundboardListenKeyCts;
     private int soundboardListenVirtualKey = (int)Keys.OemPeriod;
     private int soundboardListenKeyDown;
+    private Thread? voiceToTextKeyThread;
+    private CancellationTokenSource? voiceToTextKeyCts;
+    private int voiceToTextActivationVirtualKey = (int)Keys.F8;
+    private int voiceToTextActivationKeyDown;
     private readonly TextBox voiceGuardTriggerKeyBox = new();
     private Thread? voiceGuardTriggerKeyThread;
     private CancellationTokenSource? voiceGuardTriggerKeyCts;
@@ -1390,6 +1394,7 @@ public sealed class MainForm : Form
         {
             if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; speechActivationHint.Text = "Escape is reserved for canceling dictation."; speechActivationKeyBox.Text = voiceToTextActivationKey.ToString(); speechActivationKeyBox.Parent?.Focus(); return; }
             voiceToTextActivationKey = e.KeyCode;
+            Volatile.Write(ref voiceToTextActivationVirtualKey, (int)e.KeyCode);
             speechActivationKeyBox.Text = e.KeyCode.ToString();
             voiceToTextForm?.UpdateHotkeys(voiceToTextActivationKey, voiceToTextChatKey);
             speechActivationHint.Text = "Saved automatically.";
@@ -1497,6 +1502,7 @@ public sealed class MainForm : Form
             LoadPersistence();
             speechActivationKeyBox.Text = voiceToTextActivationKey.ToString();
             speechChatKeyBox.Text = voiceToTextChatKey.ToString();
+            Volatile.Write(ref voiceToTextActivationVirtualKey, (int)voiceToTextActivationKey);
             InitializeVoiceToTextController();
             if (Controls.Find("dashboardPttValue", true).FirstOrDefault() is Label dashboardPttLabel) dashboardPttLabel.Text = ptt.Text;
             LoadDevices();
@@ -3659,6 +3665,39 @@ public sealed class MainForm : Form
             { IsBackground = true, Name = "VoiceGuard Soundboard Listen Key" };
             soundboardListenKeyThread.Start();
 
+            // Use the exact same MainForm-level GetAsyncKeyState monitor pattern
+            // as the working VoiceGuard trigger and soundboard-listen hotkeys.
+            voiceToTextKeyCts?.Cancel();
+            voiceToTextKeyCts?.Dispose();
+            voiceToTextKeyCts = new CancellationTokenSource();
+            var voiceToTextToken = voiceToTextKeyCts.Token;
+            Volatile.Write(ref voiceToTextActivationVirtualKey, (int)voiceToTextActivationKey);
+            Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
+            AddLog($"SPEECH-TO-TEXT HOTKEY MONITOR STARTING — key={DisplayKey(voiceToTextActivationKey)}");
+            voiceToTextKeyThread = new Thread(() =>
+            {
+                while (!voiceToTextToken.IsCancellationRequested)
+                {
+                    int vk = Volatile.Read(ref voiceToTextActivationVirtualKey);
+                    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                    int wasDown = Volatile.Read(ref voiceToTextActivationKeyDown);
+                    if (down && wasDown == 0 && Interlocked.Exchange(ref voiceToTextActivationKeyDown, 1) == 0)
+                    {
+                        try
+                        {
+                            if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnActivationHotkeyPressed());
+                        }
+                        catch { }
+                    }
+                    else if (!down && wasDown != 0 && Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0) == 1)
+                    {
+                        // Release edge resets the monitor for the next press.
+                    }
+                    Thread.Sleep(20);
+                }
+            }) { IsBackground = true, Name = "VoiceGuard Speech-to-Text Key" };
+            voiceToTextKeyThread.Start();
+
             start.Text = "Stop VoiceGuard";
             start.Enabled = true;
             AddLog("VoiceGuard started.");
@@ -4046,6 +4085,11 @@ public sealed class MainForm : Form
         voiceGuardTriggerKeyCts?.Cancel();
         voiceGuardTriggerKeyCts?.Dispose();
         voiceGuardTriggerKeyCts = null;
+        voiceToTextKeyCts?.Cancel();
+        voiceToTextKeyCts?.Dispose();
+        voiceToTextKeyCts = null;
+        voiceToTextKeyThread = null;
+        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
         voiceGuardPttCts?.Cancel();
         voiceGuardPttCts?.Dispose();
         voiceGuardPttCts = null;
