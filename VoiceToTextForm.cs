@@ -181,7 +181,6 @@ public sealed class VoiceToTextForm : Form
         // is owned by MainForm beside the two established global key monitors.
         hotkeyMonitorCts = new CancellationTokenSource();
         var token = hotkeyMonitorCts.Token;
-        Interlocked.Exchange(ref activationKeyDown, 0);
         Interlocked.Exchange(ref escapeKeyDown, 0);
         hotkeyMonitorThread = new Thread(() =>
         {
