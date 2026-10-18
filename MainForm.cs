@@ -3685,7 +3685,11 @@ public sealed class MainForm : Form
                     {
                         try
                         {
-                            if (!IsDisposed) BeginInvoke(() => voiceToTextForm?.OnActivationHotkeyPressed());
+                            if (!IsDisposed) BeginInvoke(() =>
+                            {
+                                AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey((Keys)vk)}");
+                                voiceToTextForm?.OnActivationHotkeyPressed();
+                            });
                         }
                         catch { }
                     }
