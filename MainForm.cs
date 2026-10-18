@@ -3984,13 +3984,7 @@ public sealed class MainForm : Form
                 voiceToTextChatKey,
                 BeginVoiceToTextCapture,
                 EndVoiceToTextCapture,
-                CancelVoiceToTextCapture,
-                (activationKey, chatKey) =>
-                {
-                    voiceToTextActivationKey = activationKey;
-                    voiceToTextChatKey = chatKey;
-                    SavePersistence();
-                });
+                CancelVoiceToTextCapture);
             voiceToTextForm.FormClosed += (_, _) => voiceToTextForm = null;
         }
         voiceToTextForm.Show(this);
