@@ -255,7 +255,7 @@ public sealed class VoiceToTextForm : Form
 
     public void OnEngineStopped()
     {
-        if (recording || transcribing)
+        if (recording || transcribing || transcriptBox.TextLength > 0)
             CancelSession();
         statusLabel.Text = "VoiceGuard stopped — start it before dictating.";
         actionButton.Text = "Start Listening";
@@ -370,8 +370,17 @@ public sealed class VoiceToTextForm : Form
 
         try
         {
-            SetForegroundWindow(target);
+            if (GetForegroundWindow() != target && !SetForegroundWindow(target))
+            {
+                statusLabel.Text = "Could not focus the game window. Activate the game and try sending again.";
+                return;
+            }
             Thread.Sleep(150);
+            if (GetForegroundWindow() != target)
+            {
+                statusLabel.Text = "The game did not regain focus. Nothing was sent.";
+                return;
+            }
             SendKey(chatKey);
             Thread.Sleep(120);
             SendUnicodeText(text);
