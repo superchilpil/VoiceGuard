@@ -130,8 +130,7 @@ public sealed class MainForm : Form
 
     private const int WM_HOTKEY = 0x0312;
     private const int StartStopHotkeyId = 0x5647;
-    private const int VoiceToTextActivationHotkeyId = 0x5648;
-    private const uint MOD_ALT = 0x0001;
+        private const uint MOD_ALT = 0x0001;
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_WIN = 0x0008;
@@ -524,17 +523,23 @@ public sealed class MainForm : Form
         var heroCard = MakeDashboardCard("VoiceGuard status");
         dashboard.Controls.Add(heroCard, 0, 0);
         dashboard.SetColumnSpan(heroCard, 2);
+        heroCard.Controls.Add(new Label
+        {
+            Text = "Your Voice Filtered for Snowflakes", Name = "dashboardHeroTitle", AutoSize = false,
+            Location = new Point(20, 42), Size = new Size(0, 38), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            ForeColor = TextMain, Font = new Font("Segoe UI", 10.5F, FontStyle.Bold), AutoEllipsis = false
+        });
         var dashboardMode = new Label
         {
             Name = "dashboardMode", Text = "●  READY WHEN YOU ARE", AutoSize = false,
-            Location = new Point(20, 48), Size = new Size(0, 24), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, ForeColor = Success,
+            Location = new Point(20, 84), Size = new Size(0, 24), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, ForeColor = Success,
             Font = new Font("Segoe UI", 10F, FontStyle.Bold)
         };
         heroCard.Controls.Add(dashboardMode);
         var dashboardStatus = new Label
         {
             Name = "dashboardStatus", Text = "Your audio filter is currently stopped.",
-            AutoSize = false, Location = new Point(20, 78), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            AutoSize = false, Location = new Point(20, 108), Size = new Size(0, 34), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             ForeColor = TextDim, Font = new Font("Segoe UI", 9F)
         };
         heroCard.Controls.Add(dashboardStatus);
@@ -1392,7 +1397,6 @@ public sealed class MainForm : Form
             Volatile.Write(ref voiceToTextActivationVirtualKey, (int)e.KeyCode);
             speechActivationKeyBox.Text = e.KeyCode.ToString();
             voiceToTextForm?.UpdateHotkeys(voiceToTextActivationKey, voiceToTextChatKey);
-            StartVoiceToTextKeyMonitor();
             speechActivationHint.Text = "Saved automatically.";
             e.SuppressKeyPress = true;
             SavePersistence();
@@ -1466,7 +1470,7 @@ public sealed class MainForm : Form
             pageTitle.Text = navLabels[selectedPage];
             pageSubtitle.Text = selectedPage switch
             {
-                0 => "Monitor filtering status and recent activity.",
+                0 => "Your Voice Filtered for Snowflakes",
                 1 => "Manage your microphone, virtual-cable output, and volume.",
                 2 => "Configure blocked words, aliases, and replacement sounds.",
                 3 => "Manage soundboard phrases, aliases, and private playback.",
@@ -2232,18 +2236,9 @@ public sealed class MainForm : Form
 
     protected override void WndProc(ref Message m)
     {
-        if (m.Msg == WM_HOTKEY)
+        if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == StartStopHotkeyId)
         {
-            int hotkeyId = m.WParam.ToInt32();
-            if (hotkeyId == StartStopHotkeyId)
-            {
-                BeginInvoke(async () => await ToggleEngineAsync());
-            }
-            else if (hotkeyId == VoiceToTextActivationHotkeyId)
-            {
-                AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey(voiceToTextActivationKey)}");
-                voiceToTextForm?.OnActivationHotkeyPressed();
-            }
+            BeginInvoke(async () => await ToggleEngineAsync());
         }
 
         base.WndProc(ref m);
@@ -3716,8 +3711,6 @@ public sealed class MainForm : Form
             userLog = text.Trim();
         }
         else if (text.StartsWith("SPEECH-TO-TEXT HOTKEY MONITOR STARTING", StringComparison.OrdinalIgnoreCase) ||
-                 text.StartsWith("SPEECH-TO-TEXT HOTKEY REGISTERED", StringComparison.OrdinalIgnoreCase) ||
-                 text.StartsWith("SPEECH-TO-TEXT HOTKEY REGISTER ERROR", StringComparison.OrdinalIgnoreCase) ||
                  text.StartsWith("SPEECH-TO-TEXT HOTKEY DETECTED", StringComparison.OrdinalIgnoreCase) ||
                  text.StartsWith("SPEECH-TO-TEXT HOTKEY DISPATCH ERROR", StringComparison.OrdinalIgnoreCase) ||
                  text.StartsWith("VOICE TO TEXT — ", StringComparison.OrdinalIgnoreCase))
@@ -4023,26 +4016,59 @@ public sealed class MainForm : Form
 
     private void StartVoiceToTextKeyMonitor()
     {
-        if (!IsHandleCreated) return;
+        if (voiceToTextKeyThread is { IsAlive: true }) return;
 
-        _ = UnregisterHotKey(Handle, VoiceToTextActivationHotkeyId);
-        uint keyCode = (uint)voiceToTextActivationKey;
-        if (!RegisterHotKey(Handle, VoiceToTextActivationHotkeyId, MOD_NOREPEAT, keyCode))
+        voiceToTextKeyCts?.Cancel();
+        voiceToTextKeyCts?.Dispose();
+        voiceToTextKeyCts = new CancellationTokenSource();
+        var token = voiceToTextKeyCts.Token;
+        Volatile.Write(ref voiceToTextActivationVirtualKey, (int)voiceToTextActivationKey);
+        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
+        AddLog($"SPEECH-TO-TEXT HOTKEY MONITOR STARTING — key={DisplayKey(voiceToTextActivationKey)}");
+
+        voiceToTextKeyThread = new Thread(() =>
         {
-            int error = Marshal.GetLastWin32Error();
-            AddLog($"SPEECH-TO-TEXT HOTKEY REGISTER ERROR — key={DisplayKey(voiceToTextActivationKey)} | Win32={error}");
-            DiagnosticLogger.Write("STT", $"RegisterHotKey failed for {voiceToTextActivationKey}; Win32={error}");
-            return;
-        }
+            while (!token.IsCancellationRequested)
+            {
+                int vk = Volatile.Read(ref voiceToTextActivationVirtualKey);
+                bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
+                int wasDown = Volatile.Read(ref voiceToTextActivationKeyDown);
 
-        AddLog($"SPEECH-TO-TEXT HOTKEY REGISTERED — key={DisplayKey(voiceToTextActivationKey)}");
-        DiagnosticLogger.Write("STT", $"RegisterHotKey succeeded for {voiceToTextActivationKey}");
+                if (down && wasDown == 0 &&
+                    Interlocked.Exchange(ref voiceToTextActivationKeyDown, 1) == 0)
+                {
+                    try
+                    {
+                        if (!IsDisposed) BeginInvoke(() =>
+                        {
+                            AddLog($"SPEECH-TO-TEXT HOTKEY DETECTED — key={DisplayKey((Keys)vk)}");
+                            voiceToTextForm?.OnActivationHotkeyPressed();
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        AddLog($"SPEECH-TO-TEXT HOTKEY DISPATCH ERROR — {ex.GetType().Name}: {ex.Message}");
+                    }
+                }
+                else if (!down && wasDown != 0)
+                {
+                    Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
+                }
+
+                Thread.Sleep(20);
+            }
+        })
+        { IsBackground = true, Name = "VoiceGuard Speech-to-Text Key" };
+        voiceToTextKeyThread.Start();
     }
 
     private void StopVoiceToTextKeyMonitor()
     {
-        if (IsHandleCreated)
-            _ = UnregisterHotKey(Handle, VoiceToTextActivationHotkeyId);
+        try { voiceToTextKeyCts?.Cancel(); } catch { }
+        voiceToTextKeyCts?.Dispose();
+        voiceToTextKeyCts = null;
+        voiceToTextKeyThread = null;
+        Interlocked.Exchange(ref voiceToTextActivationKeyDown, 0);
     }
 
     private bool BeginVoiceToTextCapture()
