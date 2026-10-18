@@ -399,7 +399,7 @@ public sealed class MainForm : Form
             main.Height = Math.Max(1, pageHost.ClientSize.Height - main.Top);
         };
         var navButtons = new List<Button>();
-        var navLabels = new[] { "⌂   Dashboard", "♫   Audio", "☷   Word Filter", "▣   Soundboard", "≡   Logs", "⚙   Settings", "✦   Speech to Text" };
+        var navLabels = new[] { "⌂   Dashboard", "♫   Audio", "☷   Word Filter", "▣   Soundboard", "≡   Logs", "✦   Speech to Text", "⚙   Settings" };
         Action<int> showPage = _ => { };
         for (var i = 0; i < navLabels.Length; i++)
         {
@@ -424,7 +424,8 @@ public sealed class MainForm : Form
             var width = Math.Max(80, sidebar.ClientSize.Width - 16);
             for (var i = 0; i < navButtons.Count; i++)
             {
-                navButtons[i].SetBounds(8, 104 + i * 44, width, 38);
+                var y = i == navButtons.Count - 1 ? Math.Max(104 + i * 44, sidebar.ClientSize.Height - 82) : 104 + i * 44;
+                navButtons[i].SetBounds(8, y, width, 38);
                 ApplyRoundedButton(navButtons[i], 10);
             }
             sidebarFooter.SetBounds(12, Math.Max(0, sidebar.ClientSize.Height - 34), Math.Max(80, sidebar.ClientSize.Width - 24), 20);
@@ -1352,7 +1353,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0),
             Visible = false
         };
-        main.Controls.Add(speechToTextPanel, 6, 0);
+        main.Controls.Add(speechToTextPanel, 5, 0);
         var speechCard = new Panel
         {
             BackColor = Surface, Location = new Point(0, 0), Size = new Size(600, 460),
@@ -1390,6 +1391,7 @@ public sealed class MainForm : Form
             if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; speechActivationHint.Text = "Escape is reserved for canceling dictation."; speechActivationKeyBox.Text = voiceToTextActivationKey.ToString(); speechActivationKeyBox.Parent?.Focus(); return; }
             voiceToTextActivationKey = e.KeyCode;
             speechActivationKeyBox.Text = e.KeyCode.ToString();
+            voiceToTextForm?.UpdateHotkeys(voiceToTextActivationKey, voiceToTextChatKey);
             speechActivationHint.Text = "Saved automatically.";
             e.SuppressKeyPress = true;
             SavePersistence();
@@ -1413,6 +1415,7 @@ public sealed class MainForm : Form
             if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; speechChatHint.Text = "Escape is reserved for canceling dictation."; speechChatKeyBox.Text = voiceToTextChatKey.ToString(); speechChatKeyBox.Parent?.Focus(); return; }
             voiceToTextChatKey = e.KeyCode;
             speechChatKeyBox.Text = e.KeyCode.ToString();
+            voiceToTextForm?.UpdateHotkeys(voiceToTextActivationKey, voiceToTextChatKey);
             speechChatHint.Text = "Saved automatically.";
             e.SuppressKeyPress = true;
             SavePersistence();
@@ -1428,17 +1431,7 @@ public sealed class MainForm : Form
         ApplyRoundedPanel(speechFlow, 10);
         speechCard.Controls.Add(speechFlow);
 
-        var openSpeechButton = new Button
-        {
-            Text = "Open Live Dictation Window  →", Location = new Point(24, 382), Size = new Size(300, 42),
-            FlatStyle = FlatStyle.Flat, BackColor = Accent, ForeColor = TextMain,
-            Font = new Font("Segoe UI", 9.5F, FontStyle.Bold), Cursor = Cursors.Hand
-        };
-        StyleButton(openSpeechButton, true);
-        ApplyRoundedButton(openSpeechButton, 10);
-        openSpeechButton.Click += (_, _) => OpenVoiceToTextForm();
-        speechCard.Controls.Add(openSpeechButton);
-        speechCard.Height = 455;
+        speechCard.Height = 385;
         ApplyDarkScrollbarTheme(speechToTextPanel);
 
         showPage = pageIndex =>
@@ -1467,8 +1460,8 @@ public sealed class MainForm : Form
             wordPanel.Visible = selectedPage == 2;
             soundboardPanel.Visible = selectedPage == 3;
             logSection.Visible = selectedPage == 4;
-            settingsPanel.Visible = selectedPage == 5;
-            speechToTextPanel.Visible = selectedPage == 6;
+            settingsPanel.Visible = selectedPage == 6;
+            speechToTextPanel.Visible = selectedPage == 5;
             pageTitle.Text = navLabels[selectedPage];
             pageSubtitle.Text = selectedPage switch
             {
@@ -1477,8 +1470,8 @@ public sealed class MainForm : Form
                 2 => "Configure blocked words, aliases, and replacement sounds.",
                 3 => "Manage soundboard phrases, aliases, and private playback.",
                 4 => "Review VoiceGuard runtime and speech-filter activity.",
-                5 => "Configure startup, tray behavior, and the mode overlay.",
-                _ => "Configure dictation controls and live in-game speech-to-text."
+                5 => "Configure dictation controls and live in-game speech-to-text.",
+                _ => "Configure startup, tray behavior, and the mode overlay."
             };
             statusBadge.Visible = false;
             Text = "VoiceGuard — " + navLabels[selectedPage].Trim();
@@ -1504,6 +1497,7 @@ public sealed class MainForm : Form
             LoadPersistence();
             speechActivationKeyBox.Text = voiceToTextActivationKey.ToString();
             speechChatKeyBox.Text = voiceToTextChatKey.ToString();
+            InitializeVoiceToTextController();
             if (Controls.Find("dashboardPttValue", true).FirstOrDefault() is Label dashboardPttLabel) dashboardPttLabel.Text = ptt.Text;
             LoadDevices();
             ApplyStartWithWindowsSetting();
@@ -2082,6 +2076,9 @@ public sealed class MainForm : Form
         }
 
         UnregisterStartStopHotkey();
+        voiceToTextForm?.StopHotkeys();
+        voiceToTextForm?.Dispose();
+        voiceToTextForm = null;
         trayIcon.Visible = false;
         trayIcon.Dispose();
         SavePersistence();
@@ -3977,7 +3974,7 @@ public sealed class MainForm : Form
     }
 
 
-    private void OpenVoiceToTextForm()
+    private void InitializeVoiceToTextController()
     {
         if (voiceToTextForm == null || voiceToTextForm.IsDisposed)
         {
@@ -3987,11 +3984,11 @@ public sealed class MainForm : Form
                 BeginVoiceToTextCapture,
                 EndVoiceToTextCapture,
                 CancelVoiceToTextCapture);
-            voiceToTextForm.FormClosed += (_, _) => voiceToTextForm = null;
         }
-        voiceToTextForm.Show(this);
-        voiceToTextForm.BringToFront();
-        voiceToTextForm.Activate();
+
+        // Keep the controller hidden. Its global hotkeys drive live typing
+        // directly into the game; no secondary dictation window is required.
+        voiceToTextForm.StartHotkeys();
     }
 
     private bool BeginVoiceToTextCapture()
