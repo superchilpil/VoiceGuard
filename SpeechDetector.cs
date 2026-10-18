@@ -67,10 +67,11 @@ public sealed class SpeechDetector : IAsyncDisposable
         get { lock (sync) return voiceToTextActive; }
     }
 
-    public void SetVoiceToTextCallbacks(Action<string>? recognized, Action<string>? failed = null)
+    public void SetVoiceToTextCallbacks(Action<string>? recognized, Action<string>? failed = null, Action<string>? liveRecognized = null)
     {
         voiceToTextRecognized = recognized;
         voiceToTextFailed = failed;
+        voiceToTextLiveRecognized = liveRecognized;
     }
 
     public bool StartVoiceToText(double absoluteStartSeconds)
@@ -80,6 +81,7 @@ public sealed class SpeechDetector : IAsyncDisposable
         {
             voiceToTextPcm.Clear();
             voiceToTextStartSeconds = Math.Max(0, absoluteStartSeconds);
+            voiceToTextLastQueuedBytes = 0;
             voiceToTextGeneration++;
             voiceToTextActive = true;
         }
@@ -99,6 +101,22 @@ public sealed class SpeechDetector : IAsyncDisposable
             appendCount -= appendCount % 2;
             if (appendCount > 0)
                 voiceToTextPcm.AddRange(pcm.AsSpan(0, appendCount).ToArray());
+
+            // Queue a rolling snapshot every ~1.5 seconds so dictation appears live.
+            int snapshotStep = (int)(BytesPerSecond * 1.5);
+            if (voiceToTextPcm.Count - voiceToTextLastQueuedBytes >= snapshotStep)
+            {
+                byte[] snapshot = voiceToTextPcm.ToArray();
+                voiceToTextLastQueuedBytes = snapshot.Length;
+                var window = new RecognitionWindow(snapshot, voiceToTextStartSeconds,
+                    snapshot.Length / (double)BytesPerSecond, 0, false, true, voiceToTextGeneration, false);
+                lock (workQueueSync)
+                {
+                    workQueue.RemoveAll(x => x.IsVoiceToText && !x.IsVoiceToTextFinal);
+                    workQueue.Add(window);
+                }
+                try { queueSignal.Release(); } catch (SemaphoreFullException) { }
+            }
         }
     }
 
@@ -123,9 +141,12 @@ public sealed class SpeechDetector : IAsyncDisposable
             return false;
         }
 
-        var window = new RecognitionWindow(pcm, start, pcm.Length / (double)BytesPerSecond, 0, false, true, generation);
+        var window = new RecognitionWindow(pcm, start, pcm.Length / (double)BytesPerSecond, 0, false, true, generation, true);
         lock (workQueueSync)
+        {
+            workQueue.RemoveAll(x => x.IsVoiceToText);
             workQueue.Add(window);
+        }
         queueSignal.Release();
         log($"VOICE TO TEXT — recording stopped; queued {window.Duration:0.0}s for transcription.");
         return true;
@@ -172,8 +193,10 @@ public sealed class SpeechDetector : IAsyncDisposable
     private bool voiceToTextActive;
     private double voiceToTextStartSeconds;
     private int voiceToTextGeneration;
+    private int voiceToTextLastQueuedBytes;
     private Action<string>? voiceToTextRecognized;
     private Action<string>? voiceToTextFailed;
+    private Action<string>? voiceToTextLiveRecognized;
     private const int MaxVoiceToTextBytes = BytesPerSecond * 20;
 
     public SpeechDetector(IEnumerable<string> words, Action<string> log, Func<double>? outputCursorSeconds = null)
@@ -787,10 +810,16 @@ public sealed class SpeechDetector : IAsyncDisposable
 
             if (voiceToTextOnly)
             {
+                string transcript = string.Join(" ", recognized).Trim();
                 foreach (var phrase in recognized)
                     log($"VOICE TO TEXT HEARD: {phrase}");
                 if (window.VoiceToTextGeneration == Volatile.Read(ref voiceToTextGeneration))
-                    voiceToTextRecognized?.Invoke(string.Join(" ", recognized).Trim());
+                {
+                    if (window.IsVoiceToTextFinal)
+                        voiceToTextRecognized?.Invoke(transcript);
+                    else
+                        voiceToTextLiveRecognized?.Invoke(transcript);
+                }
                 return;
             }
 
@@ -1584,5 +1613,5 @@ public sealed class SpeechDetector : IAsyncDisposable
         factory = null;
     }
 
-    private sealed record RecognitionWindow(byte[] Pcm48k, double AbsoluteStart, double Duration, long SegmentId, bool IsSoundboardListen = false, bool IsVoiceToText = false, int VoiceToTextGeneration = 0);
+    private sealed record RecognitionWindow(byte[] Pcm48k, double AbsoluteStart, double Duration, long SegmentId, bool IsSoundboardListen = false, bool IsVoiceToText = false, int VoiceToTextGeneration = 0, bool IsVoiceToTextFinal = true);
 }
