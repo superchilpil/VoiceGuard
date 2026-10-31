@@ -90,6 +90,7 @@ public sealed class MainForm : Form
     private bool overlayEnabled = true;
     private string overlayPosition = "TopCenter";
     private string overlayStyle = "Text";
+    private string overlayMonitor = "";
     private readonly Label status = new();
     private readonly Button start = new();
     private readonly ToggleSwitch startWithWindows = new();
@@ -179,6 +180,7 @@ public sealed class MainForm : Form
         public bool OverlayEnabled { get; set; } = true;
         public string OverlayPosition { get; set; } = "TopCenter";
         public string OverlayStyle { get; set; } = "Text";
+        public string OverlayMonitor { get; set; } = "";
         public string StartStopHotkey { get; set; } = "Control, Alt, V";
         public string VoiceGuardTriggerKey { get; set; } = Keys.Oemcomma.ToString();
     }
@@ -1701,6 +1703,7 @@ public sealed class MainForm : Form
             overlayEnabled = config.OverlayEnabled;
             overlayPosition = config.OverlayPosition ?? "TopCenter";
             overlayStyle = config.OverlayStyle ?? "Text";
+            overlayMonitor = config.OverlayMonitor ?? "";
 
             words.Items.Clear();
             blockedWordAliases.Clear();
@@ -1895,6 +1898,7 @@ public sealed class MainForm : Form
                 OverlayEnabled = overlayEnabled,
                 OverlayPosition = overlayPosition,
                 OverlayStyle = overlayStyle,
+                OverlayMonitor = overlayMonitor,
                 StartStopHotkey = FormatHotkeyForConfig(startStopHotkey.Tag is Keys startStopKey ? startStopKey : Keys.Control | Keys.Alt | Keys.V),
                 VoiceGuardTriggerKey = (voiceGuardTriggerKeyBox.Tag is Keys triggerKey ? triggerKey : Keys.Oemcomma).ToString()
             };
@@ -3817,14 +3821,38 @@ public sealed class MainForm : Form
 
     private void ShowOverlaySettings()
     {
-        using var dlg = new Form { Text = "Mode overlay settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(340, 190), MaximizeBox = false, MinimizeBox = false, BackColor = Surface, ForeColor = TextMain };
+        using var dlg = new Form { Text = "Mode overlay settings", FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent, ClientSize = new Size(360, 255), MaximizeBox = false, MinimizeBox = false, BackColor = Surface, ForeColor = TextMain };
         var enabled = new CheckBox { Text = "Enable mode overlay", Checked = overlayEnabled, AutoSize = true, Location = new Point(16, 16), ForeColor = TextMain };
-        var position = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 58), Width = 300 };
-        position.Items.AddRange(new object[] { "TopLeft", "TopCenter", "TopRight", "MiddleLeft", "MiddleRight", "BottomLeft", "BottomCenter", "BottomRight" }); position.SelectedItem = overlayPosition; if (position.SelectedIndex < 0) position.SelectedIndex = 1;
-        var style = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 100), Width = 300 }; style.Items.AddRange(new object[] { "Text", "LED" }); style.SelectedItem = overlayStyle; if (style.SelectedIndex < 0) style.SelectedIndex = 0;
-        var save = new Button { Text = "Save", Location = new Point(236, 145), Size = new Size(80, 30) }; StyleButton(save, true);
-        save.Click += (_, _) => { overlayEnabled = enabled.Checked; overlayPosition = position.SelectedItem?.ToString() ?? "TopCenter"; overlayStyle = style.SelectedItem?.ToString() ?? "Text"; if (modeOverlay != null) { if (overlayEnabled && engine != null) { modeOverlay.Configure(overlayPosition, overlayStyle); modeOverlay.Show(); } else modeOverlay.Hide(); } SavePersistence(); dlg.DialogResult = DialogResult.OK; dlg.Close(); };
-        dlg.Controls.AddRange(new Control[] { enabled, position, style, save }); dlg.ShowDialog(this);
+        var positionLabel = new Label { Text = "Overlay position", AutoSize = true, Location = new Point(16, 52), ForeColor = TextDim };
+        var position = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 72), Width = 326 };
+        position.Items.AddRange(new object[] { "TopLeft", "TopCenter", "TopRight", "MiddleLeft", "MiddleRight", "BottomLeft", "BottomCenter", "BottomRight" });
+        position.SelectedItem = overlayPosition; if (position.SelectedIndex < 0) position.SelectedIndex = 1;
+        var monitorLabel = new Label { Text = "Display monitor", AutoSize = true, Location = new Point(16, 112), ForeColor = TextDim };
+        var monitor = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 132), Width = 326 };
+        var availableScreens = Screen.AllScreens.OrderBy(s => s.DeviceName, StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach (var screen in availableScreens) monitor.Items.Add($"{(screen.Primary ? "Primary — " : "")}{screen.DeviceName} ({screen.Bounds.Width}×{screen.Bounds.Height})");
+        int selectedMonitor = Array.FindIndex(availableScreens, s => string.Equals(s.DeviceName, overlayMonitor, StringComparison.OrdinalIgnoreCase));
+        monitor.SelectedIndex = selectedMonitor >= 0 ? selectedMonitor : Array.FindIndex(availableScreens, s => s.Primary);
+        if (monitor.SelectedIndex < 0 && monitor.Items.Count > 0) monitor.SelectedIndex = 0;
+        var styleLabel = new Label { Text = "Overlay style", AutoSize = true, Location = new Point(16, 172), ForeColor = TextDim };
+        var style = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(16, 192), Width = 150 };
+        style.Items.AddRange(new object[] { "Text", "LED" }); style.SelectedItem = overlayStyle; if (style.SelectedIndex < 0) style.SelectedIndex = 0;
+        var save = new Button { Text = "Save", Location = new Point(262, 212), Size = new Size(80, 30) }; StyleButton(save, true);
+        save.Click += (_, _) =>
+        {
+            overlayEnabled = enabled.Checked;
+            overlayPosition = position.SelectedItem?.ToString() ?? "TopCenter";
+            overlayStyle = style.SelectedItem?.ToString() ?? "Text";
+            overlayMonitor = monitor.SelectedIndex >= 0 && monitor.SelectedIndex < availableScreens.Length ? availableScreens[monitor.SelectedIndex].DeviceName : "";
+            if (modeOverlay != null)
+            {
+                if (overlayEnabled && engine != null) { modeOverlay.Configure(overlayPosition, overlayStyle, overlayMonitor); modeOverlay.Show(); }
+                else modeOverlay.Hide();
+            }
+            SavePersistence(); dlg.DialogResult = DialogResult.OK; dlg.Close();
+        };
+        dlg.Controls.AddRange(new Control[] { enabled, positionLabel, position, monitorLabel, monitor, styleLabel, style, save });
+        dlg.ShowDialog(this);
     }
 
     private void SetMode(string text)
@@ -3841,7 +3869,7 @@ public sealed class MainForm : Form
         if (engine != null && overlayEnabled)
         {
             modeOverlay ??= new ModeOverlayForm();
-            modeOverlay.Configure(overlayPosition, overlayStyle);
+            modeOverlay.Configure(overlayPosition, overlayStyle, overlayMonitor);
             if (!modeOverlay.Visible) modeOverlay.Show();
             modeOverlay.SetMode(text);
         }
