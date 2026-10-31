@@ -1,7 +1,9 @@
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Linq;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace VoiceGuard;
 
@@ -12,6 +14,7 @@ internal sealed class ModeOverlayForm : Form
     private string currentMode = "LIVE";
     private string positionName = "TopCenter";
     private string styleName = "Text";
+    private string monitorDeviceName = "";
     private Color modeColor = Color.LimeGreen;
     private const int WS_EX_TRANSPARENT = 0x20;
     private const int WS_EX_TOOLWINDOW = 0x80;
@@ -25,15 +28,20 @@ internal sealed class ModeOverlayForm : Form
         textLabel.Dock = DockStyle.Fill; textLabel.TextAlign = ContentAlignment.MiddleCenter;
         textLabel.Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
         textLabel.ForeColor = Color.White; textLabel.BackColor = Color.Transparent;
-        Controls.Add(textLabel); Configure(positionName, styleName); SetMode(currentMode);
+        Controls.Add(textLabel);
+        SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
+        Configure(positionName, styleName, monitorDeviceName);
+        SetMode(currentMode);
     }
     protected override bool ShowWithoutActivation => true;
     protected override CreateParams CreateParams { get { var cp = base.CreateParams; cp.ExStyle |= WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE; return cp; } }
     protected override void OnShown(EventArgs e) { base.OnShown(e); PositionOverlay(); }
 
-    public void Configure(string position, string style)
+    public void Configure(string position, string style, string? monitor = null)
     {
-        positionName = position ?? "TopCenter"; styleName = style ?? "Text";
+        positionName = position ?? "TopCenter";
+        styleName = style ?? "Text";
+        monitorDeviceName = monitor ?? "";
         bool isLed = string.Equals(styleName, "LED", StringComparison.OrdinalIgnoreCase);
         textLabel.Visible = !isLed;
         Size = isLed ? new Size(33, 33) : new Size(230, 38);
@@ -48,7 +56,10 @@ internal sealed class ModeOverlayForm : Form
     }
     private void PositionOverlay()
     {
-        var area = Screen.PrimaryScreen?.WorkingArea ?? Screen.FromPoint(Cursor.Position).WorkingArea;
+        var screens = Screen.AllScreens;
+        var targetScreen = screens.FirstOrDefault(s => string.Equals(s.DeviceName, monitorDeviceName, StringComparison.OrdinalIgnoreCase));
+        if (targetScreen == null) targetScreen = Screen.PrimaryScreen ?? Screen.FromPoint(Cursor.Position);
+        var area = targetScreen.WorkingArea;
         int margin = 18, x = area.Left + (area.Width - Width) / 2, y = area.Top + margin;
         switch (positionName)
         {
@@ -63,6 +74,24 @@ internal sealed class ModeOverlayForm : Form
         }
         Location = new Point(x, y);
     }
+    private void DisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        if (IsDisposed || !IsHandleCreated) return;
+        try { BeginInvoke(new Action(PositionOverlay)); } catch { }
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged;
+        base.OnFormClosed(e);
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        PositionOverlay();
+    }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         if (!string.Equals(styleName, "LED", StringComparison.OrdinalIgnoreCase)) return;
@@ -88,7 +117,7 @@ internal sealed class ModeOverlayForm : Form
         if (IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(new Action(() => SetMode(mode))); return; }
         currentMode = mode ?? "LIVE";
-        modeColor = currentMode.Contains("BYPASS", StringComparison.OrdinalIgnoreCase) ? Color.Gold :
+        modeColor =             currentMode.Contains("BYPASS", StringComparison.OrdinalIgnoreCase) ? Color.Gold :
             currentMode.Contains("SOUNDBOARD", StringComparison.OrdinalIgnoreCase) ? Color.MediumPurple :
             currentMode.Contains("DRAIN", StringComparison.OrdinalIgnoreCase) || currentMode.Contains("ANALYZ", StringComparison.OrdinalIgnoreCase) || currentMode.Contains("DELAY", StringComparison.OrdinalIgnoreCase) ? Color.IndianRed :
             currentMode.Contains("STOP", StringComparison.OrdinalIgnoreCase) ? Color.Gray : Color.LimeGreen;
