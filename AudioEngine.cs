@@ -450,7 +450,7 @@ public sealed class AudioEngine : IDisposable
 
     public void Stop()
     {
-        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; soundboardListening=false; }
+        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; soundboardListening=false; directPttBypass=false; }
         try { capture?.StopRecording(); } catch { }
         try { output?.Stop(); } catch { }
         delayed?.ClearBuffer();
