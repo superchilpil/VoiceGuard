@@ -44,6 +44,7 @@ public sealed class AudioEngine : IDisposable
     private bool stopped;
     private bool soundboardListening;
     private bool soundboardPlaybackActive;
+    private volatile bool directPttBypass;
     private long capturePackets;
     private long captureBytes;
     private double capturePcmSeconds;
@@ -146,6 +147,13 @@ public sealed class AudioEngine : IDisposable
         switcher?.SetOutputVolume(volume);
     }
 
+    // Direct physical Game PTT is a clean microphone bypass: do not apply
+    // VoiceGuard's master output gain/limiter while this key is held.
+    public void SetDirectPttBypass(bool enabled)
+    {
+        directPttBypass = enabled;
+    }
+
     public void Start()
     {
         var format = new WaveFormat(SampleRate, Bits, Channels);
@@ -172,7 +180,7 @@ public sealed class AudioEngine : IDisposable
 
         switcher = new SwitchProvider(
             format, delayed, live, FinishDrain, GetState, () => delaySeconds, () => capturePcmSeconds, () => drainTargetSeconds, GetReplacementDrainTargetSeconds,
-            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver, soundboardVolumeResolver);
+            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver, soundboardVolumeResolver, () => directPttBypass);
 
         output = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 80, NumberOfBuffers = 3 };
         output.Init(switcher);
@@ -491,6 +499,7 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<string, double>? replacementVolumeResolver;
         private readonly Func<double>? outputVolumeResolver;
         private readonly Func<string, double>? soundboardVolumeResolver;
+        private readonly Func<bool> directPttBypass;
     private readonly Func<string, string?>? soundboardSoundResolver;
         private double outputVolume = 1.0;
         private double sourceReadSeconds;
@@ -501,11 +510,11 @@ public sealed class AudioEngine : IDisposable
         public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, BufferedWaveProvider live,
             Action finishDrain, Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds, Func<double> getDrainTargetSeconds, Func<double> getReplacementDrainTargetSeconds,
             Func<double,bool> isCensored, Func<double,double,List<CensorRegion>> getCensorRegions,
-            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver, Func<string, double>? soundboardVolumeResolver)
+            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver, Func<string, double>? soundboardVolumeResolver, Func<bool> directPttBypass)
         {
             this.format=format; this.delayed=delayed; this.live=live; this.finishDrain=finishDrain; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds; this.getDrainTargetSeconds=getDrainTargetSeconds; this.getReplacementDrainTargetSeconds=getReplacementDrainTargetSeconds;
             this.isCensored=isCensored; this.getCensorRegions=getCensorRegions; this.getCensorRegion=getCensorRegion;
-            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver; this.soundboardVolumeResolver=soundboardVolumeResolver;
+            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver; this.soundboardVolumeResolver=soundboardVolumeResolver; this.directPttBypass=directPttBypass;
             outputVolume = Math.Clamp(outputVolumeResolver?.Invoke() ?? 1.0, 0.0, 1.5);
         }
         public WaveFormat WaveFormat=>format;
@@ -540,7 +549,11 @@ public sealed class AudioEngine : IDisposable
                 int liveRead = live.Read(buffer, offset, count);
                 if(liveRead < count)
                     Array.Clear(buffer, offset + liveRead, count - liveRead);
-                ApplyOutputVolume(buffer, offset, count);
+                // Physical PTT bypass must remain unmodified mic PCM. In particular,
+                // bypass the master output gain stage, which can intentionally add
+                // nonlinear limiting above 100% and color the microphone signal.
+                if (!directPttBypass())
+                    ApplyOutputVolume(buffer, offset, count);
                 return count;
             }
 
