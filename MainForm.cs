@@ -3461,7 +3461,8 @@ public sealed class MainForm : Form
                 // start or stop the delayed VoiceGuard capture/drain state here.
                 if (key == Keys.Z)
                 {
-                    AddLog($"Z LIVE BYPASS {(down ? "ACTIVE" : "RELEASED")} — delayed filter state unchanged");
+                    engine?.SetDirectPttBypass(down);
+                    AddLog($"Z LIVE BYPASS {(down ? "ACTIVE" : "RELEASED")} — raw microphone passthrough; master output processing skipped");
                     SetMode(down ? "Z LIVE BYPASS" : "LIVE");
                     SetStatus(down ? "Z held — live microphone passthrough; filtering not engaged." : "READY — live microphone passthrough.");
                     return;
