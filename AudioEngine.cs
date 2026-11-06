@@ -206,7 +206,10 @@ public sealed class AudioEngine : IDisposable
             capturePackets++; captureBytes += e.BytesRecorded;
             capturePcmSeconds += e.BytesRecorded / (double)BytesPerSecond;
             if (capturePackets == 1 || capturePackets % 50 == 0)
-                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode}");
+            {
+                var liveDiagnostics = switcher?.GetLiveDiagnostics() ?? (0L, 0L, 0);
+                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode} liveBuffered={liveDiagnostics.Item3} liveUnderruns={liveDiagnostics.Item1} liveMissingBytes={liveDiagnostics.Item2}");
+            }
 
             if (ptt)
             {
@@ -502,6 +505,8 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<bool> directPttBypass;
     private readonly Func<string, string?>? soundboardSoundResolver;
         private double outputVolume = 1.0;
+        private long liveUnderrunCount;
+        private long liveUnderrunBytes;
         private double sourceReadSeconds;
         private double lastOutputLogSecond=-1;
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
@@ -521,12 +526,20 @@ public sealed class AudioEngine : IDisposable
         public double CurrentSourceSeconds=>sourceReadSeconds;
         public void AddLiveSamples(byte[] data, int offset, int count) => live.AddSamples(data, offset, count);
         public void ClearLiveBuffer() => live.ClearBuffer();
+        public (long underruns, long missingBytes, int bufferedBytes) GetLiveDiagnostics()
+            => (
+                System.Threading.Interlocked.Read(ref liveUnderrunCount),
+                System.Threading.Interlocked.Read(ref liveUnderrunBytes),
+                live.BufferedBytes
+            );
         public void BeginDelayedTimeline(double baseSeconds) => sourceReadSeconds = Math.Max(0, baseSeconds);
         public void SetOutputVolume(double volume) => outputVolume = Math.Clamp(volume, 0.0, 1.5);
         private void ApplyOutputVolume(byte[] buffer, int offset, int bytes)
         {
-            double volume = Math.Clamp(outputVolumeResolver?.Invoke() ?? outputVolume, 0.0, 1.5);
-            outputVolume = volume;
+            // The audio callback runs on NAudio's playback thread. Use the
+            // cached value updated by SetOutputVolume instead of invoking a
+            // resolver that may read a WinForms control from this thread.
+            double volume = Math.Clamp(outputVolume, 0.0, 1.5);
             if (Math.Abs(volume - 1.0) < 0.0001) return;
             int end = offset + (bytes - (bytes % 2));
             for (int i = offset; i < end; i += 2)
@@ -548,7 +561,13 @@ public sealed class AudioEngine : IDisposable
             {
                 int liveRead = live.Read(buffer, offset, count);
                 if(liveRead < count)
+                {
+                    // Count live-path starvation so we can distinguish a
+                    // producer/consumer timing problem from sample distortion.
+                    System.Threading.Interlocked.Increment(ref liveUnderrunCount);
+                    System.Threading.Interlocked.Add(ref liveUnderrunBytes, count - liveRead);
                     Array.Clear(buffer, offset + liveRead, count - liveRead);
+                }
                 // Physical PTT bypass must remain unmodified mic PCM. In particular,
                 // bypass the master output gain stage, which can intentionally add
                 // nonlinear limiting above 100% and color the microphone signal.
