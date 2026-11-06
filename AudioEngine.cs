@@ -206,7 +206,7 @@ public sealed class AudioEngine : IDisposable
             if (capturePackets == 1 || capturePackets % 50 == 0)
             {
                 var liveDiagnostics = switcher?.GetLiveDiagnostics() ?? (0L, 0L, 0);
-                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode} liveBuffered={liveDiagnostics.Item3} liveUnderruns={liveDiagnostics.Item1} liveMissingBytes={liveDiagnostics.Item2}");
+                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode} liveBuffered={liveDiagnostics.Item3} liveUnderruns={liveDiagnostics.Item1} liveMissingBytes={liveDiagnostics.Item2} liveOverflows={liveDiagnostics.Item3} liveDroppedBytes={liveDiagnostics.Item4}");
             }
 
             if (ptt)
@@ -605,9 +605,7 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<bool> directPttBypass;
     private readonly Func<string, string?>? soundboardSoundResolver;
         private double outputVolume = 1.0;
-        private long liveUnderrunCount;
-        private long liveUnderrunBytes;
-        private double sourceReadSeconds;
+                private double sourceReadSeconds;
         private double lastOutputLogSecond=-1;
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string,byte[]> soundboardCache=new(StringComparer.OrdinalIgnoreCase);
@@ -626,12 +624,11 @@ public sealed class AudioEngine : IDisposable
         public double CurrentSourceSeconds=>sourceReadSeconds;
         public void AddLiveSamples(byte[] data, int offset, int count) => live.Write(data, offset, count);
         public void ClearLiveBuffer() => live.Clear();
-        public (long underruns, long missingBytes, int bufferedBytes) GetLiveDiagnostics()
-            => (
-                System.Threading.Interlocked.Read(ref liveUnderrunCount),
-                System.Threading.Interlocked.Read(ref liveUnderrunBytes),
-                live.BufferedBytes
-            );
+        public (long underruns, long missingBytes, long overflows, long droppedBytes, int bufferedBytes) GetLiveDiagnostics()
+        {
+            var d = live.Diagnostics;
+            return (d.underruns, d.missingBytes, d.overflows, d.droppedBytes, live.BufferedBytes);
+        }
         public void BeginDelayedTimeline(double baseSeconds) => sourceReadSeconds = Math.Max(0, baseSeconds);
         public void SetOutputVolume(double volume) => outputVolume = Math.Clamp(volume, 0.0, 1.5);
         private void ApplyOutputVolume(byte[] buffer, int offset, int bytes)
