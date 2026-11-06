@@ -130,7 +130,7 @@ public sealed class AudioEngine : IDisposable
         }
 
         try { delayed?.ClearBuffer(); } catch { }
-        try { live?.ClearBuffer(); } catch { }
+        try { live?.Clear(); } catch { }
         try { switcher?.ClearLiveBuffer(); } catch { }
         try { analysisSegmentEnd?.Invoke(capturePcmSeconds); } catch { }
 
@@ -457,7 +457,7 @@ public sealed class AudioEngine : IDisposable
         try { capture?.StopRecording(); } catch { }
         try { output?.Stop(); } catch { }
         delayed?.ClearBuffer();
-        live?.ClearBuffer();
+        live?.Clear();
         lock (censorLock) censorRegions.Clear();
     }
 
