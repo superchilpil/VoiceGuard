@@ -496,28 +496,28 @@ public sealed class AudioEngine : IDisposable
         {
             get
             {
-                long available = Volatile.Read(ref writePosition) - Volatile.Read(ref readPosition);
+                long available = System.Threading.Volatile.Read(ref writePosition) - System.Threading.Volatile.Read(ref readPosition);
                 return (int)Math.Clamp(available, 0, buffer.Length);
             }
         }
 
         public (long underruns, long missingBytes, long overflows, long droppedBytes) Diagnostics =>
-            (Interlocked.Read(ref underrunCount), Interlocked.Read(ref underrunBytes),
-             Interlocked.Read(ref overflowCount), Interlocked.Read(ref overflowBytes));
+            (System.Threading.Interlocked.Read(ref underrunCount), System.Threading.Interlocked.Read(ref underrunBytes),
+             System.Threading.Interlocked.Read(ref overflowCount), System.Threading.Interlocked.Read(ref overflowBytes));
 
         public void Write(byte[] source, int offset, int count)
         {
             if (count <= 0) return;
             count -= count % 2; // keep 16-bit PCM sample aligned
-            long write = Volatile.Read(ref writePosition);
-            long read = Volatile.Read(ref readPosition);
+            long write = System.Threading.Volatile.Read(ref writePosition);
+            long read = System.Threading.Volatile.Read(ref readPosition);
             long available = write - read;
             if (available < 0 || available > buffer.Length) available = buffer.Length;
             int free = buffer.Length - (int)available;
             if (count > free)
             {
-                Interlocked.Increment(ref overflowCount);
-                Interlocked.Add(ref overflowBytes, count);
+                System.Threading.Interlocked.Increment(ref overflowCount);
+                System.Threading.Interlocked.Add(ref overflowBytes, count);
                 return; // drop this capture packet rather than corrupt queued PCM
             }
 
@@ -527,15 +527,15 @@ public sealed class AudioEngine : IDisposable
             int remaining = count - first;
             if (remaining > 0)
                 Buffer.BlockCopy(source, offset + first, buffer, 0, remaining);
-            Volatile.Write(ref writePosition, write + count);
+            System.Threading.Volatile.Write(ref writePosition, write + count);
         }
 
         public int Read(byte[] destination, int offset, int count)
         {
             if (count <= 0) return 0;
             int requested = count - (count % 2);
-            long read = Volatile.Read(ref readPosition);
-            long write = Volatile.Read(ref writePosition);
+            long read = System.Threading.Volatile.Read(ref readPosition);
+            long write = System.Threading.Volatile.Read(ref writePosition);
             long availableLong = Math.Max(0, write - read);
             int available = (int)Math.Min(requested, availableLong);
             available -= available % 2;
@@ -548,23 +548,23 @@ public sealed class AudioEngine : IDisposable
                 int remaining = available - first;
                 if (remaining > 0)
                     Buffer.BlockCopy(buffer, 0, destination, offset + first, remaining);
-                Volatile.Write(ref readPosition, read + available);
+                System.Threading.Volatile.Write(ref readPosition, read + available);
             }
 
             int missing = count - available;
             if (missing > 0)
             {
                 Array.Clear(destination, offset + available, missing);
-                Interlocked.Increment(ref underrunCount);
-                Interlocked.Add(ref underrunBytes, missing);
+                System.Threading.Interlocked.Increment(ref underrunCount);
+                System.Threading.Interlocked.Add(ref underrunBytes, missing);
             }
             return count;
         }
 
         public void Clear()
         {
-            long write = Volatile.Read(ref writePosition);
-            Volatile.Write(ref readPosition, write);
+            long write = System.Threading.Volatile.Read(ref writePosition);
+            System.Threading.Volatile.Write(ref readPosition, write);
         }
     }
 
