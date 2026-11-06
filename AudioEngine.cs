@@ -205,8 +205,8 @@ public sealed class AudioEngine : IDisposable
             capturePcmSeconds += e.BytesRecorded / (double)BytesPerSecond;
             if (capturePackets == 1 || capturePackets % 50 == 0)
             {
-                var liveDiagnostics = switcher?.GetLiveDiagnostics() ?? (0L, 0L, 0);
-                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode} liveBuffered={liveDiagnostics.Item3} liveUnderruns={liveDiagnostics.Item1} liveMissingBytes={liveDiagnostics.Item2} liveOverflows={liveDiagnostics.Item3} liveDroppedBytes={liveDiagnostics.Item4}");
+                var liveDiagnostics = switcher?.GetLiveDiagnostics() ?? (0L, 0L, 0L, 0L, 0);
+                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode} liveBuffered={liveDiagnostics.Item5} liveUnderruns={liveDiagnostics.Item1} liveMissingBytes={liveDiagnostics.Item2} liveOverflows={liveDiagnostics.Item3} liveDroppedBytes={liveDiagnostics.Item4}");
             }
 
             if (ptt)
@@ -656,15 +656,7 @@ public sealed class AudioEngine : IDisposable
 
             if(!s.delayedMode)
             {
-                int liveRead = live.Read(buffer, offset, count);
-                if(liveRead < count)
-                {
-                    // Count live-path starvation so we can distinguish a
-                    // producer/consumer timing problem from sample distortion.
-                    System.Threading.Interlocked.Increment(ref liveUnderrunCount);
-                    System.Threading.Interlocked.Add(ref liveUnderrunBytes, count - liveRead);
-                    Array.Clear(buffer, offset + liveRead, count - liveRead);
-                }
+                live.Read(buffer, offset, count);
                 // Physical PTT bypass must remain unmodified mic PCM. In particular,
                 // bypass the master output gain stage, which can intentionally add
                 // nonlinear limiting above 100% and color the microphone signal.
