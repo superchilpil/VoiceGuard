@@ -42,3 +42,14 @@ jobs:
           path: publish/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Add artifact download instructions
+        if: success()
+        shell: pwsh
+        run: |
+          @"
+          ## Windows test build ready
+
+          The **VoiceGuard-Test-Build-win-x64** artifact was uploaded successfully.
+          On this run's Summary page, scroll to **Artifacts** and select the artifact name to download the ZIP. It is retained for 14 days.
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8

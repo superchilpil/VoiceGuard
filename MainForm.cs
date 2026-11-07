@@ -3456,15 +3456,13 @@ public sealed class MainForm : Form
             hook = new PttKeyHook(key, down =>
             {
                 AddLog($"GAME PTT {(down ? "DOWN" : "UP")} — key={key}");
-                // Z is reserved for direct/live game callouts. Idle mode already
-                // routes the microphone through the live passthrough; do not
-                // start or stop the delayed VoiceGuard capture/drain state here.
+                // The physical game PTT key is display-only. VoiceGuard must
+                // not alter the live microphone route when this key changes.
                 if (key == Keys.Z)
                 {
-                    engine?.SetDirectPttBypass(down);
-                    AddLog($"Z LIVE BYPASS {(down ? "ACTIVE" : "RELEASED")} — raw microphone passthrough; master output processing skipped");
-                    SetMode(down ? "Z LIVE BYPASS" : "LIVE");
-                    SetStatus(down ? "Z held — live microphone passthrough; filtering not engaged." : "READY — live microphone passthrough.");
+                    AddLog($"Z PTT BYPASS {(down ? "ACTIVE" : "RELEASED")} — audio route unchanged");
+                    SetMode(down ? "PTT BYPASS" : "LIVE");
+                    SetStatus(down ? "Z held — microphone passthrough unchanged; VoiceGuard filtering not engaged." : "READY — live microphone passthrough.");
                     return;
                 }
                 engine?.SetPtt(down);

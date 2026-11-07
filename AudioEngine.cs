@@ -31,20 +31,19 @@ public sealed class AudioEngine : IDisposable
     private WaveInEvent? capture;
     private WaveOutEvent? output;
     private BufferedWaveProvider? delayed;
-    private BufferedWaveProvider? live;
+    private LivePcmRingBuffer? live;
     private SwitchProvider? switcher;
 
     private readonly object stateLock = new();
     private readonly object censorLock = new();
     private readonly List<CensorRegion> censorRegions = new();
-    private bool ptt;
-    private bool delayedMode;
-    private bool draining;
+    private volatile bool ptt;
+    private volatile bool delayedMode;
+    private volatile bool draining;
     private double drainTargetSeconds;
     private bool stopped;
     private bool soundboardListening;
     private bool soundboardPlaybackActive;
-    private volatile bool directPttBypass;
     private long capturePackets;
     private long captureBytes;
     private double capturePcmSeconds;
@@ -130,7 +129,7 @@ public sealed class AudioEngine : IDisposable
         }
 
         try { delayed?.ClearBuffer(); } catch { }
-        try { live?.ClearBuffer(); } catch { }
+        try { live?.Clear(); } catch { }
         try { switcher?.ClearLiveBuffer(); } catch { }
         try { analysisSegmentEnd?.Invoke(capturePcmSeconds); } catch { }
 
@@ -147,13 +146,6 @@ public sealed class AudioEngine : IDisposable
         switcher?.SetOutputVolume(volume);
     }
 
-    // Direct physical Game PTT is a clean microphone bypass: do not apply
-    // VoiceGuard's master output gain/limiter while this key is held.
-    public void SetDirectPttBypass(bool enabled)
-    {
-        directPttBypass = enabled;
-    }
-
     public void Start()
     {
         var format = new WaveFormat(SampleRate, Bits, Channels);
@@ -164,12 +156,10 @@ public sealed class AudioEngine : IDisposable
             ReadFully = false
         };
 
-        live = new BufferedWaveProvider(format)
-        {
-            BufferLength = BytesPerSecond * 2,
-            DiscardOnBufferOverflow = false,
-            ReadFully = false
-        };
+        // The live microphone path uses a bounded SPSC ring instead of a
+        // multi-second BufferedWaveProvider queue. Capture writes; WaveOut reads.
+        // 16 KiB is ~171 ms at 48 kHz mono PCM and absorbs normal callback jitter.
+        live = new LivePcmRingBuffer(16 * 1024);
 
         // PTT is idle at startup: microphone audio passes through live.
         // The delayed/censored path is activated only while PTT is held and
@@ -180,7 +170,7 @@ public sealed class AudioEngine : IDisposable
 
         switcher = new SwitchProvider(
             format, delayed, live, FinishDrain, GetState, () => delaySeconds, () => capturePcmSeconds, () => drainTargetSeconds, GetReplacementDrainTargetSeconds,
-            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver, soundboardVolumeResolver, () => directPttBypass);
+            IsCensored, GetCensorRegions, GetCensorRegion, status, log, replacementVolumeResolver, outputVolumeResolver, soundboardVolumeResolver);
 
         output = new WaveOutEvent { DeviceNumber = outputDevice, DesiredLatency = 80, NumberOfBuffers = 3 };
         output.Init(switcher);
@@ -206,7 +196,10 @@ public sealed class AudioEngine : IDisposable
             capturePackets++; captureBytes += e.BytesRecorded;
             capturePcmSeconds += e.BytesRecorded / (double)BytesPerSecond;
             if (capturePackets == 1 || capturePackets % 50 == 0)
-                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode}");
+            {
+                var liveDiagnostics = switcher?.GetLiveDiagnostics() ?? (0L, 0L, 0L, 0L, 0);
+                log($"MIC CAPTURE — packets={capturePackets} bytes={captureBytes} latest={e.BytesRecorded} ptt={ptt} delayedMode={delayedMode} liveBuffered={liveDiagnostics.Item5} liveUnderruns={liveDiagnostics.Item1} liveMissingBytes={liveDiagnostics.Item2} liveOverflows={liveDiagnostics.Item3} liveDroppedBytes={liveDiagnostics.Item4}");
+            }
 
             if (ptt)
             {
@@ -420,7 +413,9 @@ public sealed class AudioEngine : IDisposable
 
     private (bool delayedMode, bool ptt, bool draining) GetState()
     {
-        lock (stateLock) return (delayedMode, ptt, draining);
+        // These flags are volatile so the real-time playback callback never
+        // blocks behind capture/UI state transitions.
+        return (delayedMode, ptt, draining);
     }
 
     private double GetReplacementDrainTargetSeconds()
@@ -450,11 +445,11 @@ public sealed class AudioEngine : IDisposable
 
     public void Stop()
     {
-        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; soundboardListening=false; directPttBypass=false; }
+        lock (stateLock) { stopped=true; ptt=false; delayedMode=false; draining=false; soundboardListening=false; }
         try { capture?.StopRecording(); } catch { }
         try { output?.Stop(); } catch { }
         delayed?.ClearBuffer();
-        live?.ClearBuffer();
+        live?.Clear();
         lock (censorLock) censorRegions.Clear();
     }
 
@@ -463,6 +458,106 @@ public sealed class AudioEngine : IDisposable
         Stop();
         if (capture != null) { capture.DataAvailable -= Capture_DataAvailable; capture.Dispose(); capture=null; }
         output?.Dispose(); output=null;
+    }
+
+
+    // Single-producer/single-consumer PCM ring buffer for the live mic path.
+    // WaveInEvent is the sole producer and WaveOutEvent is the sole consumer.
+    // The producer publishes completed writes with a volatile write index;
+    // the consumer publishes completed reads with a volatile read index.
+    private sealed class LivePcmRingBuffer
+    {
+        private readonly byte[] buffer;
+        private readonly int mask;
+        private long writePosition;
+        private long readPosition;
+        private long underrunCount;
+        private long underrunBytes;
+        private long overflowCount;
+        private long overflowBytes;
+
+        public LivePcmRingBuffer(int capacity)
+        {
+            if (capacity < 2 || (capacity & (capacity - 1)) != 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be a power of two.");
+            buffer = new byte[capacity];
+            mask = capacity - 1;
+        }
+
+        public int BufferedBytes
+        {
+            get
+            {
+                long available = System.Threading.Volatile.Read(ref writePosition) - System.Threading.Volatile.Read(ref readPosition);
+                return (int)Math.Clamp(available, 0, buffer.Length);
+            }
+        }
+
+        public (long underruns, long missingBytes, long overflows, long droppedBytes) Diagnostics =>
+            (System.Threading.Interlocked.Read(ref underrunCount), System.Threading.Interlocked.Read(ref underrunBytes),
+             System.Threading.Interlocked.Read(ref overflowCount), System.Threading.Interlocked.Read(ref overflowBytes));
+
+        public void Write(byte[] source, int offset, int count)
+        {
+            if (count <= 0) return;
+            count -= count % 2; // keep 16-bit PCM sample aligned
+            long write = System.Threading.Volatile.Read(ref writePosition);
+            long read = System.Threading.Volatile.Read(ref readPosition);
+            long available = write - read;
+            if (available < 0 || available > buffer.Length) available = buffer.Length;
+            int free = buffer.Length - (int)available;
+            if (count > free)
+            {
+                System.Threading.Interlocked.Increment(ref overflowCount);
+                System.Threading.Interlocked.Add(ref overflowBytes, count);
+                return; // drop this capture packet rather than corrupt queued PCM
+            }
+
+            int index = (int)(write & mask);
+            int first = Math.Min(count, buffer.Length - index);
+            Buffer.BlockCopy(source, offset, buffer, index, first);
+            int remaining = count - first;
+            if (remaining > 0)
+                Buffer.BlockCopy(source, offset + first, buffer, 0, remaining);
+            System.Threading.Volatile.Write(ref writePosition, write + count);
+        }
+
+        public int Read(byte[] destination, int offset, int count)
+        {
+            if (count <= 0) return 0;
+            int requested = count - (count % 2);
+            long read = System.Threading.Volatile.Read(ref readPosition);
+            long write = System.Threading.Volatile.Read(ref writePosition);
+            long availableLong = Math.Max(0, write - read);
+            int available = (int)Math.Min(requested, availableLong);
+            available -= available % 2;
+
+            if (available > 0)
+            {
+                int index = (int)(read & mask);
+                int first = Math.Min(available, buffer.Length - index);
+                Buffer.BlockCopy(buffer, index, destination, offset, first);
+                int remaining = available - first;
+                if (remaining > 0)
+                    Buffer.BlockCopy(buffer, 0, destination, offset + first, remaining);
+                System.Threading.Volatile.Write(ref readPosition, read + available);
+            }
+
+            int missing = count - available;
+            if (missing > 0)
+            {
+                Array.Clear(destination, offset + available, missing);
+                System.Threading.Interlocked.Increment(ref underrunCount);
+                System.Threading.Interlocked.Add(ref underrunBytes, missing);
+            }
+            return count;
+        }
+
+        public void Clear()
+        {
+            long write = System.Threading.Volatile.Read(ref writePosition);
+            System.Threading.Volatile.Write(ref readPosition, write);
+        }
     }
 
     private sealed class CensorRegion
@@ -484,7 +579,7 @@ public sealed class AudioEngine : IDisposable
     {
         private readonly WaveFormat format;
         private readonly BufferedWaveProvider delayed;
-        private readonly BufferedWaveProvider live;
+        private readonly LivePcmRingBuffer live;
         private readonly Action finishDrain;
         private readonly Func<(bool delayedMode,bool ptt,bool draining)> state;
         private readonly Func<double> delay;
@@ -499,34 +594,40 @@ public sealed class AudioEngine : IDisposable
         private readonly Func<string, double>? replacementVolumeResolver;
         private readonly Func<double>? outputVolumeResolver;
         private readonly Func<string, double>? soundboardVolumeResolver;
-        private readonly Func<bool> directPttBypass;
     private readonly Func<string, string?>? soundboardSoundResolver;
         private double outputVolume = 1.0;
-        private double sourceReadSeconds;
+                private double sourceReadSeconds;
         private double lastOutputLogSecond=-1;
         private readonly Dictionary<string,byte[]> replacementCache=new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string,byte[]> soundboardCache=new(StringComparer.OrdinalIgnoreCase);
 
-        public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, BufferedWaveProvider live,
+        public SwitchProvider(WaveFormat format, BufferedWaveProvider delayed, LivePcmRingBuffer live,
             Action finishDrain, Func<(bool delayedMode,bool ptt,bool draining)> state, Func<double> delay, Func<double> captureSeconds, Func<double> getDrainTargetSeconds, Func<double> getReplacementDrainTargetSeconds,
             Func<double,bool> isCensored, Func<double,double,List<CensorRegion>> getCensorRegions,
-            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver, Func<string, double>? soundboardVolumeResolver, Func<bool> directPttBypass)
+            Func<double,CensorRegion?> getCensorRegion, Action<string> censorStatus, Action<string> log, Func<string, double>? replacementVolumeResolver, Func<double>? outputVolumeResolver, Func<string, double>? soundboardVolumeResolver)
         {
             this.format=format; this.delayed=delayed; this.live=live; this.finishDrain=finishDrain; this.state=state; this.delay=delay; this.captureSeconds=captureSeconds; this.getDrainTargetSeconds=getDrainTargetSeconds; this.getReplacementDrainTargetSeconds=getReplacementDrainTargetSeconds;
             this.isCensored=isCensored; this.getCensorRegions=getCensorRegions; this.getCensorRegion=getCensorRegion;
-            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver; this.soundboardVolumeResolver=soundboardVolumeResolver; this.directPttBypass=directPttBypass;
+            this.censorStatus=censorStatus; this.log=log; this.replacementVolumeResolver=replacementVolumeResolver; this.outputVolumeResolver=outputVolumeResolver; this.soundboardVolumeResolver=soundboardVolumeResolver;
             outputVolume = Math.Clamp(outputVolumeResolver?.Invoke() ?? 1.0, 0.0, 1.5);
         }
         public WaveFormat WaveFormat=>format;
         public double CurrentSourceSeconds=>sourceReadSeconds;
-        public void AddLiveSamples(byte[] data, int offset, int count) => live.AddSamples(data, offset, count);
-        public void ClearLiveBuffer() => live.ClearBuffer();
+        public void AddLiveSamples(byte[] data, int offset, int count) => live.Write(data, offset, count);
+        public void ClearLiveBuffer() => live.Clear();
+        public (long underruns, long missingBytes, long overflows, long droppedBytes, int bufferedBytes) GetLiveDiagnostics()
+        {
+            var d = live.Diagnostics;
+            return (d.underruns, d.missingBytes, d.overflows, d.droppedBytes, live.BufferedBytes);
+        }
         public void BeginDelayedTimeline(double baseSeconds) => sourceReadSeconds = Math.Max(0, baseSeconds);
         public void SetOutputVolume(double volume) => outputVolume = Math.Clamp(volume, 0.0, 1.5);
         private void ApplyOutputVolume(byte[] buffer, int offset, int bytes)
         {
-            double volume = Math.Clamp(outputVolumeResolver?.Invoke() ?? outputVolume, 0.0, 1.5);
-            outputVolume = volume;
+            // The audio callback runs on NAudio's playback thread. Use the
+            // cached value updated by SetOutputVolume instead of invoking a
+            // resolver that may read a WinForms control from this thread.
+            double volume = Math.Clamp(outputVolume, 0.0, 1.5);
             if (Math.Abs(volume - 1.0) < 0.0001) return;
             int end = offset + (bytes - (bytes % 2));
             for (int i = offset; i < end; i += 2)
@@ -546,14 +647,10 @@ public sealed class AudioEngine : IDisposable
 
             if(!s.delayedMode)
             {
-                int liveRead = live.Read(buffer, offset, count);
-                if(liveRead < count)
-                    Array.Clear(buffer, offset + liveRead, count - liveRead);
-                // Physical PTT bypass must remain unmodified mic PCM. In particular,
-                // bypass the master output gain stage, which can intentionally add
-                // nonlinear limiting above 100% and color the microphone signal.
-                if (!directPttBypass())
-                    ApplyOutputVolume(buffer, offset, count);
+                // Live microphone passthrough is always raw PCM. Physical game
+                // PTT keys never change this route; gain/censor processing belongs
+                // exclusively to the filtered/delayed transmission path.
+                live.Read(buffer, offset, count);
                 return count;
             }
 
