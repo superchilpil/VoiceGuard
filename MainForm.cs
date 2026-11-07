@@ -1431,6 +1431,14 @@ public sealed class MainForm : Form
             Height = 28;
         }
 
+        protected override void OnValueChanged(EventArgs e)
+        {
+            base.OnValueChanged(e);
+            // The custom-painted thumb needs the entire control repainted;
+            // partial native TrackBar invalidation can leave old thumb pixels.
+            Invalidate();
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
@@ -2270,7 +2278,8 @@ public sealed class MainForm : Form
         var r = GetReplacementSliderRect(index); int left = r.Left + 4, right = r.Right - 4;
         double normalized = right <= left ? 1.0 : (x - left) / (double)(right - left);
         replacementVolumes[word] = Math.Clamp(normalized, 0.0, 1.0) * 1.5;
-        words.Invalidate(words.GetItemRectangle(index)); SavePersistence();
+        // Save once on mouse-up instead of blocking the UI on every mouse move.
+        words.Invalidate(words.GetItemRectangle(index));
     }
     private void WordsMouseDown(object? sender, MouseEventArgs e)
     {
@@ -2287,7 +2296,14 @@ public sealed class MainForm : Form
     }
     private void WordsMouseUp(object? sender, MouseEventArgs e)
     {
-        if (e.Button == MouseButtons.Left) { draggingReplacementVolume = false; draggingReplacementIndex = -1; return; }
+        if (e.Button == MouseButtons.Left)
+        {
+            bool changed = draggingReplacementVolume;
+            draggingReplacementVolume = false;
+            draggingReplacementIndex = -1;
+            if (changed) SavePersistence();
+            return;
+        }
         if (e.Button != MouseButtons.Right) return; int index = words.IndexFromPoint(e.Location);
         if (index < 0 || index >= words.Items.Count) return; words.SelectedIndex = index; wordsMenu.Show(words, e.Location);
     }
@@ -2338,7 +2354,9 @@ public sealed class MainForm : Form
     private void SetSoundboardVolumeFromPoint(int index,int x)
     {
         if(index<0||index>=soundboard.Items.Count)return; string trigger=soundboard.Items[index]?.ToString()??""; if(!soundboardSounds.ContainsKey(trigger))return;
-        var r=GetSoundboardSliderRect(index); int left=r.Left+4,right=r.Right-4; double n=right<=left?1:(x-left)/(double)(right-left); soundboardVolumes[trigger]=Math.Clamp(n,0,1)*1.5; soundboard.Invalidate(soundboard.GetItemRectangle(index)); SavePersistence();
+        var r=GetSoundboardSliderRect(index); int left=r.Left+4,right=r.Right-4; double n=right<=left?1:(x-left)/(double)(right-left); soundboardVolumes[trigger]=Math.Clamp(n,0,1)*1.5;
+        // Save once on mouse-up instead of blocking the UI on every mouse move.
+        soundboard.Invalidate(soundboard.GetItemRectangle(index));
     }
     private bool draggingSoundboardVolume;
     private int draggingSoundboardIndex=-1;
@@ -2348,7 +2366,14 @@ public sealed class MainForm : Form
         if(e.Button==MouseButtons.Left){ if(GetSoundboardSliderRect(index).Contains(e.Location)){draggingSoundboardVolume=true;draggingSoundboardIndex=index;SetSoundboardVolumeFromPoint(index,e.X);} else if(GetSoundboardTestRect(index).Contains(e.Location)) TestSoundboardSound(trigger); }
     }
     private void SoundboardMouseMove(object? sender,MouseEventArgs e){if(draggingSoundboardVolume&&draggingSoundboardIndex>=0&&e.Button==MouseButtons.Left)SetSoundboardVolumeFromPoint(draggingSoundboardIndex,e.X);}
-    private void SoundboardMouseUp(object? sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){draggingSoundboardVolume=false;draggingSoundboardIndex=-1;}}
+    private void SoundboardMouseUp(object? sender,MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        bool changed = draggingSoundboardVolume;
+        draggingSoundboardVolume = false;
+        draggingSoundboardIndex = -1;
+        if (changed) SavePersistence();
+    }
 
     private string? GetSoundboardSound(string phrase) => soundboardSounds.TryGetValue(phrase, out var path) ? path : null;
     private double GetSoundboardVolume(string phrase) => soundboardVolumes.TryGetValue(phrase, out var value) ? Math.Clamp(value,0,1.5) : 1.0;
