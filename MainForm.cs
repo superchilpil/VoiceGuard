@@ -859,7 +859,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 800), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 900), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -959,6 +959,25 @@ public sealed class MainForm : Form
         if (jackBrand.Image != null) settingsBrand.Image = (Image)jackBrand.Image.Clone();
         settingsCard.Controls.Add(settingsBrand);
         settingsCard.Controls.Add(new Label { Text = "Settings are saved automatically.", AutoSize = true, Location = new Point(260, 732), ForeColor = TextDim });
+
+        var exportSettingsButton = new Button
+        {
+            Text = "Export Settings",
+            Location = new Point(22, 790),
+            Size = new Size(220, 40)
+        };
+        StyleButton(exportSettingsButton, true);
+        ApplyRoundedButton(exportSettingsButton, 10);
+        exportSettingsButton.Click += (_, _) => ExportSettings();
+        settingsCard.Controls.Add(exportSettingsButton);
+        settingsCard.Controls.Add(new Label
+        {
+            Text = "Save a backup of your blocked words, aliases, sound assignments, and app preferences as a JSON file.",
+            AutoSize = false,
+            Location = new Point(22, 840),
+            Size = new Size(490, 38),
+            ForeColor = TextDim
+        });
 
         // Rebuild Audio as a two-column card workspace. Existing controls and
         // event handlers are reused so device routing, persistence and PTT stay unchanged.
@@ -1854,10 +1873,10 @@ public sealed class MainForm : Form
         }
     }
 
-    private void SavePersistence()
+    private bool SavePersistence()
     {
         if (loadingPersistence || IsDisposed)
-            return;
+            return false;
 
         try
         {
@@ -1911,10 +1930,53 @@ public sealed class MainForm : Form
             var tempPath = ConfigPath + ".tmp";
             File.WriteAllText(tempPath, json);
             File.Move(tempPath, ConfigPath, true);
+            return true;
         }
         catch (Exception ex)
         {
             AddLog($"CONFIG SAVE ERROR — {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void ExportSettings()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Export VoiceGuard Settings",
+            Filter = "VoiceGuard settings (*.json)|*.json",
+            DefaultExt = "json",
+            AddExtension = true,
+            FileName = $"VoiceGuard-Settings-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            OverwritePrompt = true
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        try
+        {
+            // Persist the live UI state first so the exported file includes any
+            // changes made immediately before the user chose Export.
+            if (!SavePersistence() || !File.Exists(ConfigPath))
+                throw new IOException("VoiceGuard could not save its current settings before export.");
+
+            File.Copy(ConfigPath, dialog.FileName, true);
+            AddLog($"SETTINGS EXPORTED — {dialog.FileName}");
+            MessageBox.Show(
+                $"Your VoiceGuard settings were exported successfully.\r\n\r\n{dialog.FileName}\r\n\r\nAudio files are not included; the export retains their current file paths.",
+                "VoiceGuard settings exported",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AddLog($"SETTINGS EXPORT ERROR — {ex.GetType().Name}: {ex.Message}");
+            MessageBox.Show(
+                $"VoiceGuard could not export its settings.\r\n\r\n{ex.Message}",
+                "Settings export failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
     }
 
