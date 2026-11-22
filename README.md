@@ -365,8 +365,14 @@ VoiceGuard automatically saves its configuration, including blocked words, alias
 
 Settings are stored in the user's local application data so they persist between launches.
 
-### Exporting Settings
+### Full Backup and Restore
 
-Open **Settings** and select **Export Settings** to save the current VoiceGuard configuration as a JSON backup. The export includes blocked words, aliases, replacement-sound assignments and playback settings, soundboard phrases and aliases, audio-device selections, hotkeys, and application preferences.
+Open **Settings** and select **Export Settings** to create a compressed ZIP backup of VoiceGuard. The backup includes:
 
-The export stores the existing paths to replacement and soundboard audio files; **the audio files themselves are not copied**. Keep those files in their VoiceGuard folders if you plan to restore the configuration on another Windows installation.
+- Your complete configuration: blocked words, aliases, replacement playback settings and volumes, soundboard phrases and aliases, hotkeys, audio preferences, and application settings.
+- Every audio file stored in VoiceGuard's `ReplacementSounds` folder.
+- Every audio file stored in VoiceGuard's `Soundboard` folder.
+
+To restore a backup, select **Import Backup** and choose a VoiceGuard ZIP backup. VoiceGuard restores the configuration and audio files, and updates the saved audio paths to the folders used by the current Windows account. Importing replaces the active configuration and overwrites audio files with matching names in the VoiceGuard audio folders.
+
+Keep a copy of your ZIP backup somewhere separate from the computer running VoiceGuard.
