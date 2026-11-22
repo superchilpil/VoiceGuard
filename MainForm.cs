@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
@@ -859,7 +860,7 @@ public sealed class MainForm : Form
         // Dedicated settings page for app preferences and overlay configuration.
         var settingsPanel = new Panel { Dock = DockStyle.Fill, BackColor = Bg, AutoScroll = true, Padding = new Padding(0) };
         main.Controls.Add(settingsPanel, 5, 0);
-        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 900), Padding = new Padding(22) };
+        var settingsCard = new Panel { BackColor = Surface, Location = new Point(0, 0), Size = new Size(560, 1010), Padding = new Padding(22) };
         RoundSurface(settingsCard, 14);
         settingsPanel.Resize += (_, _) => settingsCard.Width = Math.Max(400, settingsPanel.ClientSize.Width - 12);
         settingsPanel.Controls.Add(settingsCard);
@@ -975,6 +976,25 @@ public sealed class MainForm : Form
             Text = "Save a backup of your blocked words, aliases, sound assignments, and app preferences as a JSON file.",
             AutoSize = false,
             Location = new Point(22, 840),
+            Size = new Size(490, 38),
+            ForeColor = TextDim
+        });
+
+        var importSettingsButton = new Button
+        {
+            Text = "Import Backup",
+            Location = new Point(22, 890),
+            Size = new Size(220, 40)
+        };
+        StyleButton(importSettingsButton, false);
+        ApplyRoundedButton(importSettingsButton, 10);
+        importSettingsButton.Click += (_, _) => ImportSettingsBackup();
+        settingsCard.Controls.Add(importSettingsButton);
+        settingsCard.Controls.Add(new Label
+        {
+            Text = "Restore a complete VoiceGuard backup, including replacement sounds and soundboard audio.",
+            AutoSize = false,
+            Location = new Point(22, 940),
             Size = new Size(490, 38),
             ForeColor = TextDim
         });
@@ -1944,10 +1964,10 @@ public sealed class MainForm : Form
         using var dialog = new SaveFileDialog
         {
             Title = "Export VoiceGuard Settings",
-            Filter = "VoiceGuard settings (*.json)|*.json",
-            DefaultExt = "json",
+            Filter = "VoiceGuard full backup (*.zip)|*.zip",
+            DefaultExt = "zip",
             AddExtension = true,
-            FileName = $"VoiceGuard-Settings-{DateTime.Now:yyyyMMdd-HHmmss}.json",
+            FileName = $"VoiceGuard-Backup-{DateTime.Now:yyyyMMdd-HHmmss}.zip",
             OverwritePrompt = true
         };
 
@@ -1961,10 +1981,15 @@ public sealed class MainForm : Form
             if (!SavePersistence() || !File.Exists(ConfigPath))
                 throw new IOException("VoiceGuard could not save its current settings before export.");
 
-            File.Copy(ConfigPath, dialog.FileName, true);
+            using (var archive = ZipFile.Open(dialog.FileName, ZipArchiveMode.Create))
+            {
+                archive.CreateEntryFromFile(ConfigPath, "config.json", CompressionLevel.Optimal);
+                AddBackupDirectoryToArchive(archive, ReplacementSoundImporter.GetStorageDirectory(), "ReplacementSounds");
+                AddBackupDirectoryToArchive(archive, GetSoundboardStorageDirectory(), "Soundboard");
+            }
             AddLog($"SETTINGS EXPORTED — {dialog.FileName}");
             MessageBox.Show(
-                $"Your VoiceGuard settings were exported successfully.\r\n\r\n{dialog.FileName}\r\n\r\nAudio files are not included; the export retains their current file paths.",
+                $"Your complete VoiceGuard backup was created successfully.\r\n\r\n{dialog.FileName}\r\n\r\nThe backup includes your settings and all audio files stored in VoiceGuard's ReplacementSounds and Soundboard folders.",
                 "VoiceGuard settings exported",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -1980,6 +2005,171 @@ public sealed class MainForm : Form
         }
     }
 
+
+    private static string GetSoundboardStorageDirectory() =>
+        Path.Combine(ConfigDirectory, "Soundboard");
+
+    private static void AddBackupDirectoryToArchive(ZipArchive archive, string sourceDirectory, string entryRoot)
+    {
+        if (!Directory.Exists(sourceDirectory))
+            return;
+
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(sourceDirectory, file)
+                .Replace(Path.DirectorySeparatorChar, '/');
+            archive.CreateEntryFromFile(file, $"{entryRoot}/{relative}", CompressionLevel.Optimal);
+        }
+    }
+
+    private void ImportSettingsBackup()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Import VoiceGuard Backup",
+            Filter = "VoiceGuard full backup (*.zip)|*.zip",
+            CheckFileExists = true,
+            Multiselect = false
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return;
+
+        if (MessageBox.Show(
+            "Importing this backup will replace your current VoiceGuard settings and overwrite matching audio files in the VoiceGuard audio folders. Continue?",
+            "Restore VoiceGuard backup",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning) != DialogResult.Yes)
+            return;
+
+        string stagingRoot = Path.Combine(Path.GetTempPath(), "VoiceGuardRestore", Guid.NewGuid().ToString("N"));
+        string stagedReplacement = Path.Combine(stagingRoot, "ReplacementSounds");
+        string stagedSoundboard = Path.Combine(stagingRoot, "Soundboard");
+        string stagedConfig = Path.Combine(stagingRoot, "config.json");
+
+        try
+        {
+            Directory.CreateDirectory(stagingRoot);
+            using (var archive = ZipFile.OpenRead(dialog.FileName))
+            {
+                var configEntry = archive.GetEntry("config.json")
+                    ?? throw new InvalidDataException("This ZIP does not contain a VoiceGuard config.json backup.");
+
+                ExtractBackupEntry(configEntry, stagedConfig);
+                foreach (var entry in archive.Entries)
+                {
+                    if (string.IsNullOrEmpty(entry.Name))
+                        continue;
+
+                    string? destination = null;
+                    if (entry.FullName.StartsWith("ReplacementSounds/", StringComparison.OrdinalIgnoreCase))
+                        destination = GetSafeBackupDestination(entry, "ReplacementSounds/", stagedReplacement);
+                    else if (entry.FullName.StartsWith("Soundboard/", StringComparison.OrdinalIgnoreCase))
+                        destination = GetSafeBackupDestination(entry, "Soundboard/", stagedSoundboard);
+
+                    if (destination != null)
+                        ExtractBackupEntry(entry, destination);
+                }
+            }
+
+            var json = File.ReadAllText(stagedConfig);
+            var importedConfig = JsonSerializer.Deserialize<VoiceGuardConfig>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? throw new InvalidDataException("The backup configuration is empty or invalid.");
+
+            // The original paths belong to the computer that created the backup.
+            // Rebase them to this installation's managed audio folders.
+            foreach (var key in importedConfig.ReplacementSounds.Keys.ToList())
+            {
+                var oldPath = importedConfig.ReplacementSounds[key];
+                if (string.IsNullOrWhiteSpace(oldPath)) continue;
+                var restoredPath = Path.Combine(ReplacementSoundImporter.GetStorageDirectory(), Path.GetFileName(oldPath));
+                if (File.Exists(Path.Combine(stagedReplacement, Path.GetFileName(oldPath))))
+                    importedConfig.ReplacementSounds[key] = restoredPath;
+            }
+
+            foreach (var pair in importedConfig.SoundboardPhrases)
+            {
+                if (pair.Value == null || string.IsNullOrWhiteSpace(pair.Value.SoundPath)) continue;
+                var fileName = Path.GetFileName(pair.Value.SoundPath);
+                if (File.Exists(Path.Combine(stagedSoundboard, fileName)))
+                    pair.Value.SoundPath = Path.Combine(GetSoundboardStorageDirectory(), fileName);
+            }
+
+            // Validate the archive and config before touching the live settings.
+            if (engine != null)
+                StopEngine();
+
+            CopyBackupDirectory(stagedReplacement, ReplacementSoundImporter.GetStorageDirectory());
+            CopyBackupDirectory(stagedSoundboard, GetSoundboardStorageDirectory());
+
+            string tempConfig = ConfigPath + ".import.tmp";
+            Directory.CreateDirectory(ConfigDirectory);
+            File.WriteAllText(tempConfig, JsonSerializer.Serialize(importedConfig,
+                new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tempConfig, ConfigPath, true);
+
+            LoadPersistence();
+            LoadDevices();
+            ApplyStartWithWindowsSetting();
+            RegisterStartStopHotkey();
+
+            AddLog("SETTINGS IMPORTED — VoiceGuard backup restored.");
+            MessageBox.Show(
+                "Your VoiceGuard backup was restored successfully. Your settings and backed-up audio files have been imported.",
+                "VoiceGuard backup restored",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            AddLog($"SETTINGS IMPORT ERROR — {ex.GetType().Name}: {ex.Message}");
+            MessageBox.Show(
+                $"VoiceGuard could not import this backup.\r\n\r\n{ex.Message}",
+                "Backup import failed",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            try { if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, true); } catch { }
+        }
+    }
+
+    private static string GetSafeBackupDestination(ZipArchiveEntry entry, string prefix, string destinationRoot)
+    {
+        string relative = entry.FullName[prefix.Length..].Replace('/', Path.DirectorySeparatorChar);
+        if (string.IsNullOrWhiteSpace(relative) || Path.IsPathRooted(relative) ||
+            relative.Split(Path.DirectorySeparatorChar).Any(part => part == ".." || part == "."))
+            throw new InvalidDataException("The backup contains an unsafe file path.");
+
+        string fullRoot = Path.GetFullPath(destinationRoot) + Path.DirectorySeparatorChar;
+        string fullPath = Path.GetFullPath(Path.Combine(destinationRoot, relative));
+        if (!fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The backup contains an unsafe file path.");
+        return fullPath;
+    }
+
+    private static void ExtractBackupEntry(ZipArchiveEntry entry, string destination)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        using var source = entry.Open();
+        using var target = File.Create(destination);
+        source.CopyTo(target);
+    }
+
+    private static void CopyBackupDirectory(string sourceDirectory, string destinationDirectory)
+    {
+        if (!Directory.Exists(sourceDirectory)) return;
+        Directory.CreateDirectory(destinationDirectory);
+        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(sourceDirectory, file);
+            var destination = Path.Combine(destinationDirectory, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, true);
+        }
+    }
 
     private void InitializeTrayIcon()
     {
