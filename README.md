@@ -364,3 +364,9 @@ Personally I use VoiceMeeter Banana in conjunction with this to switch from dire
 VoiceGuard automatically saves its configuration, including blocked words, aliases, replacement-sound assignments, replacement playback-duration settings, replacement volumes, soundboard phrases and aliases, soundboard audio assignments, soundboard volumes, soundboard listen key, master output volume, delay, **VoiceGuard Trigger Key**, **Game PTT Key**, overlay enabled/position/style settings, and selected audio devices.
 
 Settings are stored in the user's local application data so they persist between launches.
+
+### Exporting Settings
+
+Open **Settings** and select **Export Settings** to save the current VoiceGuard configuration as a JSON backup. The export includes blocked words, aliases, replacement-sound assignments and playback settings, soundboard phrases and aliases, audio-device selections, hotkeys, and application preferences.
+
+The export stores the existing paths to replacement and soundboard audio files; **the audio files themselves are not copied**. Keep those files in their VoiceGuard folders if you plan to restore the configuration on another Windows installation.
